@@ -364,32 +364,19 @@ export default function App() {
     salvarTemplates(templates);
   }, [templates]);
 
-  // useEffect A — Migração one-shot (roda UMA vez por navegador)
+  // Migração idempotente por lead: copia dataAbertura (fundação Receita) para cnpjInicio quando não fechado
   useEffect(() => {
-    const MIGRATION_FLAG = 'ictx_migration_r1_done';
-    if (localStorage.getItem(MIGRATION_FLAG) === 'true') return;
-
-    // Usa o estado inicial de leads (lido de localStorage via carregarLeads)
-    // para migrar leads cujo dataAbertura é, na verdade, a data da Receita.
-    // Só migra se: tem dataAbertura E NÃO tem cnpjInicio.
-    let alterado = false;
-    const leadsMigrados = leads.map((l) => {
-      if (l.dataAbertura && !l.cnpjInicio) {
-        alterado = true;
-        const { dataAbertura: valorAntigo, ...resto } = l;
-        return { ...resto, cnpjInicio: valorAntigo } as Lead;
-      }
-      return l;
+    setLeads((prev) => {
+      let alterado = false;
+      const migrados = prev.map((l) => {
+        if (l.dataAbertura && !l.cnpjInicio && l.status !== 'fechado') {
+          alterado = true;
+          return { ...l, cnpjInicio: l.dataAbertura };
+        }
+        return l;
+      });
+      return alterado ? migrados : prev;
     });
-
-    if (alterado) {
-      setLeads(leadsMigrados);
-      console.log(
-        '[migration r1] leads migrados:',
-        leadsMigrados.filter((m, i) => m.cnpjInicio !== leads[i]?.cnpjInicio).length
-      );
-    }
-    localStorage.setItem(MIGRATION_FLAG, 'true');
   }, []); // roda só no mount
 
   // useEffect B — Saneamento de telefone/nome/empresa (roda sempre)
@@ -449,7 +436,16 @@ export default function App() {
         // Regra de cadência centralizada (Sprint 1)
         const leadComCadencia = aplicarMudancaStatusCadencia(l, novoStatus);
 
-        const historicoAtualizado = [...leadComCadencia.historicoContatos];
+        // Se mudou para fechado e ainda não tem dataFechamento, trava com timestamp atual
+        let leadAtualizado = leadComCadencia;
+        if (novoStatus === 'fechado' && !leadAtualizado.dataFechamento) {
+          leadAtualizado = {
+            ...leadAtualizado,
+            dataFechamento: new Date().toISOString(),
+          };
+        }
+
+        const historicoAtualizado = [...leadAtualizado.historicoContatos];
         if (logInfo) {
           historicoAtualizado.unshift({
             id: `log_${Date.now()}`,
@@ -462,7 +458,7 @@ export default function App() {
         }
 
         return {
-          ...leadComCadencia,
+          ...leadAtualizado,
           historicoContatos: historicoAtualizado,
         };
       });

@@ -690,6 +690,13 @@ export function autocorrigeLead(lead: Lead): Lead {
   let novoTelSec = lead.telefoneSecundario || '';
   let novoNome = lead.nomeContato || '';
   let sociosAtualizados = [...(lead.socios || [])];
+  let novoCnpjInicio = lead.cnpjInicio;
+
+  // 0. Migração idempotente: se lead tem dataAbertura (fundação Receita) e não fechou, preenche cnpjInicio
+  if (lead.dataAbertura && !lead.cnpjInicio && lead.status !== 'fechado') {
+    novoCnpjInicio = lead.dataAbertura;
+    modificado = true;
+  }
 
   // 1. Detecta e limpa números falsos em principal e secundário
   const telefonesReorganizados = classificarESanitizarTelefones([novoTel, novoTelSec]);
@@ -786,5 +793,6 @@ export function autocorrigeLead(lead: Lead): Lead {
     isMeiDesenquadrado: isMeiFinal,
     nomeTitular: analise.nomeTitularExtraido || novoNome,
     socios: sociosAtualizados,
+    cnpjInicio: novoCnpjInicio,
   };
 }

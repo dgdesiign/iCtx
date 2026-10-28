@@ -85,6 +85,10 @@ export interface Lead {
   contaEncerradaEm?: string;
   maquinaEncerradaEm?: string;
   credenciamento?: CredenciamentoData;
+  dataCompletaReceita?: {
+    opcao_pelo_mei?: boolean;
+    [key: string]: any;
+  };
 }
 
 export type UserRole = 'supervisor' | 'executivo';

@@ -6,6 +6,7 @@ import {
   contaAtiva,
   maquinaAtiva,
   produtosVendidos,
+  dataLocalISO,
 } from './ativacao';
 
 // ---------- helpers ----------
@@ -43,11 +44,18 @@ function mesEntre(mes: string, ini: string, fim: string): boolean {
 /**
  * MEI comum (não desenquadrado) NÃO credencia. 0 pontos sempre.
  * MEI+, ME, EIRELI, LTDA, demais = elegíveis.
+ * Fonte primária: dataCompletaReceita.opcao_pelo_mei (se disponível).
  */
 export function elegivel(lead: Lead): boolean {
+  // 1. Fonte primária: dados oficiais da Receita Federal
+  const opcaoMei = lead.dataCompletaReceita?.opcao_pelo_mei;
+  if (typeof opcaoMei === 'boolean') {
+    return !opcaoMei;
+  }
+
+  // 2. Fallback heurístico quando opcao_pelo_mei for undefined
   const porte = String((lead as any).porte ?? '').trim().toUpperCase();
   if (porte === 'MEI') return false;
-  // Se o lead foi marcado como MEI comum no service de CNPJ
   if (lead.isMei === true && lead.isMeiDesenquadrado !== true) return false;
   return true;
 }
@@ -242,7 +250,7 @@ export function potencial(lead: Lead, refMes: string = ''): Potencial {
   if (!elegivel(lead)) {
     return { conta: 0, getnet: 0, total: 0, idadeDesconhecida: false, elegivel: false };
   }
-  const ref = refMes || mesAbertura(lead) || (new Date()).toISOString().slice(0, 7);
+  const ref = refMes || mesAbertura(lead) || dataLocalISO(new Date()).slice(0, 7);
   const mais = maisDeUmAno(lead, ref);
   const t = CAMPANHA.tabela;
   const conta = mais === true ? t.conta.m01.mais1ano : t.conta.m01.menos1ano;
@@ -381,6 +389,9 @@ export function selfTestPontos(): string[] {
   // --- elegibilidade ---
   t('MEI comum não é elegível', elegivel({ ...base, isMei: true, isMeiDesenquadrado: false }) === false);
   t('MEI+ é elegível', elegivel(base) === true);
+  t('Receita opcao_pelo_mei: true -> false', elegivel({ ...base, dataCompletaReceita: { opcao_pelo_mei: true } }) === false);
+  t('Receita opcao_pelo_mei: false prevalece sobre isMei: true', elegivel({ ...base, isMei: true, isMeiDesenquadrado: false, dataCompletaReceita: { opcao_pelo_mei: false } }) === true);
+  t('Receita ausente + isMei: true -> false (fallback)', elegivel({ ...base, isMei: true, isMeiDesenquadrado: false, dataCompletaReceita: undefined }) === false);
 
   // --- maisDeUmAno ---
   t('cnpj 2020 + ref 2026 = >1 ano', maisDeUmAno(base, '2026-10') === true);

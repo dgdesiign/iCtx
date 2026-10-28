@@ -93,7 +93,7 @@ Exemplo:
 - Mês 3: 100 pts M0 + 26 pts M1 + 5 pts M2 retenção = 131 pts.
 
 ### Fit Energia
-- +1 pt por cliente (em qualquer fase), soma para bônus conta.
+- +1 pt por cliente (pago 1x no mês da contratação), soma para bônus conta.
 
 ### Bônus mensais (cumulativos escalonados, avaliados todo mês sobre os pontos DO MÊS)
 - **Conta**: 60 → R$1.000; 80 → R$2.000; 100 → R$3.000; 130 → R$4.000 (acumulados: até R$10.000).
@@ -109,3 +109,6 @@ Exemplo:
 - **Ativação Getnet**: R$500 em vendas na maquininha.
 - **MEI+**: MEI desenquadrado (virou ME). Vale pontos como ME.
 - **MEI comum**: NÃO vale pontos. Só qualifica se desenquadrar durante a campanha.
+- **Elegibilidade pela Receita Federal**: O campo `dataCompletaReceita.opcao_pelo_mei` é a fonte primária da verdade (`false` = elegível, `true` = inelegível). Se ausente, usa fallback heurístico.
+- **Imutabilidade do dataFechamento**: Gravado definitivamente na transição para o status `fechado` (`new Date().toISOString()`), protegendo os pontos de evaporação. `dataUltimoContato` NUNCA é usado como data de abertura.
+- **Fuso Horário Local**: Todas as comparações de data e mês corrente utilizam `dataLocalISO` (fuso local), eliminando erros de virada em UTC.

@@ -36,11 +36,16 @@ function paraDataLocal(s: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-/** Obtém a data de abertura do credenciamento pela cascata de fallback:
- * dataAbertura ?? dataFechamento ?? dataUltimoContato.
+/** Obtém a data de abertura do credenciamento pela cascata:
+ * dataAbertura ?? dataFechamento.
+ * (dataUltimoContato NÃO é mais considerado).
  */
+export function abertura(lead: Lead): string | null {
+  return lead.dataAbertura ?? lead.dataFechamento?.slice(0, 10) ?? null;
+}
+
 function obterDataReferenciaAbertura(lead: Lead): string | null {
-  return lead.dataAbertura ?? lead.dataFechamento?.slice(0, 10) ?? lead.dataUltimoContato?.slice(0, 10) ?? null;
+  return abertura(lead);
 }
 
 /** Identifica em qual fase do ciclo Santander o lead se encontra (M0, M1, M2, expirado ou sem_data_abertura). */
@@ -111,9 +116,9 @@ export function fatorPontos(fase: FaseAtivacao): 1.0 | 0.5 | 0 {
   return 0;
 }
 
-/** Dias de calendário desde o fechamento (fallback: dataAbertura ?? dataUltimoContato). 0 se indisponível. */
+/** Dias de calendário desde o fechamento (fallback: dataAbertura). 0 se indisponível. */
 export function diasDesdeFechamento(lead: Lead, agora: Date = new Date()): number {
-  const ref = lead.dataFechamento ?? lead.dataAbertura ?? lead.dataUltimoContato;
+  const ref = lead.dataFechamento ?? lead.dataAbertura;
   const f = ref ? paraDataLocal(ref) : null;
   if (!f) return 0;
   const ini = new Date(f.getFullYear(), f.getMonth(), f.getDate()).getTime();
@@ -205,7 +210,21 @@ export function iniciarAtivacao(lead: Lead, agora: Date = new Date()): Lead {
   return { ...base, ativacaoProximoLembrete: calcularProximoLembreteAtivacao(base, agora) };
 }
 
-export function definirPix(lead: Lead, pix: number, agora: Date = new Date()): Lead {
+export function definirPix(
+  lead: Lead,
+  pix: number,
+  dataAtivacaoOuAgora?: string | Date,
+  agoraParam?: Date
+): Lead {
+  let dataAtivacao: string | undefined;
+  let agora: Date;
+  if (dataAtivacaoOuAgora instanceof Date) {
+    dataAtivacao = undefined;
+    agora = dataAtivacaoOuAgora;
+  } else {
+    dataAtivacao = dataAtivacaoOuAgora;
+    agora = agoraParam ?? new Date();
+  }
   const n = clampPix(pix);
   const { contaAtivaEm: _ignorar, ...resto } = lead;
   const atingiu = n >= ATIVACAO_CFG.pixMeta;
@@ -213,13 +232,27 @@ export function definirPix(lead: Lead, pix: number, agora: Date = new Date()): L
     ...resto,
     pixCount: n,
     ...(atingiu
-      ? { contaAtivaEm: lead.contaAtivaEm ?? dataLocalISO(agora) }
+      ? { contaAtivaEm: lead.contaAtivaEm ?? (dataAtivacao || dataLocalISO(agora)) }
       : {}),
   };
   return { ...base, ativacaoProximoLembrete: calcularProximoLembreteAtivacao(base, agora) };
 }
 
-export function definirMaquinaVendas(lead: Lead, total: number, agora: Date = new Date()): Lead {
+export function definirMaquinaVendas(
+  lead: Lead,
+  total: number,
+  dataAtivacaoOuAgora?: string | Date,
+  agoraParam?: Date
+): Lead {
+  let dataAtivacao: string | undefined;
+  let agora: Date;
+  if (dataAtivacaoOuAgora instanceof Date) {
+    dataAtivacao = undefined;
+    agora = dataAtivacaoOuAgora;
+  } else {
+    dataAtivacao = dataAtivacaoOuAgora;
+    agora = agoraParam ?? new Date();
+  }
   const v = valor(total);
   const { maquinaAtivaEm: _ignorar, ...resto } = lead;
   const atingiu = v >= ATIVACAO_CFG.maquinaMeta;
@@ -227,10 +260,37 @@ export function definirMaquinaVendas(lead: Lead, total: number, agora: Date = ne
     ...resto,
     maquinaVendas: v,
     ...(atingiu
-      ? { maquinaAtivaEm: lead.maquinaAtivaEm ?? dataLocalISO(agora) }
+      ? { maquinaAtivaEm: lead.maquinaAtivaEm ?? (dataAtivacao || dataLocalISO(agora)) }
       : {}),
   };
   return { ...base, ativacaoProximoLembrete: calcularProximoLembreteAtivacao(base, agora) };
+}
+
+export function corrigirDataAtivacaoConta(lead: Lead, dataISO: string, agora: Date = new Date()): Lead {
+  const base: Lead = {
+    ...lead,
+    contaAtivaEm: dataISO,
+  };
+  return { ...base, ativacaoProximoLembrete: calcularProximoLembreteAtivacao(base, agora) };
+}
+
+export function corrigirDataAtivacaoMaquina(lead: Lead, dataISO: string, agora: Date = new Date()): Lead {
+  const base: Lead = {
+    ...lead,
+    maquinaAtivaEm: dataISO,
+  };
+  return { ...base, ativacaoProximoLembrete: calcularProximoLembreteAtivacao(base, agora) };
+}
+
+export function definirFitEnergia(lead: Lead, dataISO?: string): Lead {
+  if (dataISO === undefined) {
+    return { ...lead, fitContratadoEm: dataLocalISO() };
+  }
+  if (!dataISO) {
+    const { fitContratadoEm: _ignorar, ...resto } = lead;
+    return resto as Lead;
+  }
+  return { ...lead, fitContratadoEm: dataISO };
 }
 
 export const registrarVendaMaquina = (lead: Lead, adicional: number, agora: Date = new Date()): Lead =>
@@ -250,9 +310,9 @@ export function selfTestAtivacao(): string[] {
   t('fase expirado 3+ meses', faseAtivacao({ ...b, dataAbertura: '2026-07-20' }, agora) === 'expirado');
   t('fase sem data', faseAtivacao(b, agora) === 'sem_data_abertura');
 
-  // 2. Cascata de fallback para data de abertura
+  // 2. Cascata de fallback para data de abertura (dataUltimoContato ignorado)
   t('fallback dataFechamento', faseAtivacao({ ...b, dataFechamento: '2026-10-05T12:00:00Z' }, agora) === 'M0');
-  t('fallback dataUltimoContato', faseAtivacao({ ...b, dataUltimoContato: '2026-09-01' }, agora) === 'M1');
+  t('ignora dataUltimoContato', faseAtivacao({ ...b, dataUltimoContato: '2026-09-01' }, agora) === 'sem_data_abertura');
 
   // 3. Fatores de pontos Santander
   t('fator M0 = 1.0', fatorPontos('M0') === 1.0);
@@ -303,6 +363,11 @@ export function selfTestAtivacao(): string[] {
   t('pix limitado a 3', definirPix(b, 9, agora).pixCount === 3);
   t('imutavel definirPix', definirPix(b, 1, agora) !== b && b.pixCount === undefined);
   t('virada de mes somarDiasLocal', somarDiasLocal(7, new Date(2026, 9, 28)) === '2026-11-04');
+  t('definirPix com dataAtivacao', definirPix(b, 3, '2026-10-05').contaAtivaEm === '2026-10-05');
+  t('definirMaquinaVendas com dataAtivacao', definirMaquinaVendas(b, 500, '2026-10-06').maquinaAtivaEm === '2026-10-06');
+  t('corrigirDataAtivacaoConta', corrigirDataAtivacaoConta(b, '2026-10-02').contaAtivaEm === '2026-10-02');
+  t('corrigirDataAtivacaoMaquina', corrigirDataAtivacaoMaquina(b, '2026-10-03').maquinaAtivaEm === '2026-10-03');
+  t('definirFitEnergia', definirFitEnergia(b, '2026-10-04').fitContratadoEm === '2026-10-04');
 
   return falhas;
 }

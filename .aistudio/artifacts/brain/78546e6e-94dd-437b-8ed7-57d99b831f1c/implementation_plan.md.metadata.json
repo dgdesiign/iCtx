@@ -1,0 +1,6 @@
+{
+  "summary":  "Plano detalhado de implementação para o S-DINHEIRO-A cobrindo base de dados, dataFechamento ao fechar, campo editável de ativação, migração idempotente de leads, uso estrito de fuso local, elegibilidade oficial da Receita Federal e suporte a Fit Energia.",
+  "updatedAt":  "2026-10-28T10:54:26.904549425Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}
