@@ -1,0 +1,6 @@
+{
+  "name": "iCtx - CRM de Prospecção PJ",
+  "description": "iCtx - CRM de prospecção PJ com busca automática de CNPJ na Receita Federal, pipeline de vendas por etapas de contato e gerador inteligente de abordagens para WhatsApp e ligações.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
