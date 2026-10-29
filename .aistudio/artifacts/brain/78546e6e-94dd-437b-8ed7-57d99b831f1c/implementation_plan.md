@@ -1,84 +1,103 @@
-# S-DINHEIRO-A: Base de Dados, Fechamento Estável, Migração Idempotente e Elegibilidade Receita
+# S-ATIVAÇÃO-A — Fix Crítico do Erro 401 & Indicador de Pendências de Sync
 
-Plano técnico para consolidar a integridade financeira do CRM iCtx na esteira de dados (sem alterações de UI), garantindo persistência imutável de `dataFechamento`, datas de ativação configuráveis, cálculo de pontos em fuso local e elegibilidade oficial via dados da Receita Federal.
-
-## User Review & Decisões Críticas
+Resolução do problema de perda silenciosa de alterações no Google Sheets quando o token OAuth expira durante a sessão do usuário, implementando reautenticação com silent retry, propagação explícita de `TOKEN_EXPIRADO` e indicador visual no Header com contagem de pendências.
 
 > [!IMPORTANT]
-> O escopo é restrito exclusivamente aos 5 arquivos de infraestrutura e regras (`src/utils/ativacao.ts`, `src/utils/pontos.ts`, `src/services/cnpjService.ts`, `src/App.tsx`, `src/types/crm.ts` e anotações em `REGRAS.md`). Nenhuma interface de usuário ou componente visual será modificado nesta etapa.
-
-- **Item 4 (dataFechamento)**: Gravado em `handleUpdateLeadStatus` ao entrar em `fechado` se ausente; remoção de `dataUltimoContato` da cadeia de fallback em `ativacao.ts` para evitar que pontos evaporem com novos contatos.
-- **Item 5 (Data de ativação editável)**: 3º parâmetro opcional em `definirPix` e `definirMaquinaVendas`, mais helpers `corrigirDataAtivacaoConta` e `corrigirDataAtivacaoMaquina`.
-- **Item 7 (Migração idempotente)**: `useEffect` em `App.tsx` sem flag global de navegador, rodando por lead apenas quando `status !== 'fechado'`, replicado em `autocorrigeLead`.
-- **Item 10 (Fuso Local)**: Eliminação de `toISOString().slice(0, 7)` em `pontos.ts` em favor de `dataLocalISO(new Date()).slice(0, 7)`.
-- **Elegibilidade Receita**: Prioridade máxima para `dataCompletaReceita.opcao_pelo_mei`, prevenindo falsos negativos de MEI+.
-- **Fit Energia**: Helper `definirFitEnergia` e integração no cálculo pontual.
+> **Escopo Restrito (Exatamente 5 arquivos):**
+> 1. `src/services/googleAuthService.ts` (`tentarReautenticar`, `garantirTokenValido`)
+> 2. `src/services/googleSheetsService.ts` (interceptar `401` com `throw new Error('TOKEN_EXPIRADO')`)
+> 3. `src/App.tsx` (estado `pendingSyncCount`, helper `executarComRetry`, `calcularPendenciasLocais`, disparo com retry em saves/status)
+> 4. `src/components/Header.tsx` (prop `pendingSyncCount`, ponto vermelho + badge com contagem e tooltip de pendências)
+> 5. `REGRAS.md` (§3 atualizado)
+>
+> Proibido alterar: tipos de Lead, `ativacao.ts`, `pontos.ts`, `campanha.ts`, `LeadCard`, `LeadDetailDrawer`, `SupervisorDashboard`, outros componentes ou dependências.
 
 ---
 
-## 1. Visão Geral e Conceito
+### 1. Visão Geral da Arquitetura de Retry & Sync
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                          FLUXO DO S-DINHEIRO-A                         │
-├────────────────────────────────────────────────────────────────────────┤
-│                                                                        │
-│  [Mudança para Fechado] ──> Grava lead.dataFechamento (se ausente)     │
-│                                    │                                   │
-│                                    ▼                                   │
-│  [Abertura da Janela]   ──> dataAbertura ?? dataFechamento (Local)     │
-│                             (sem dataUltimoContato instável)           │
-│                                    │                                   │
-│                                    ▼                                   │
-│  [Elegibilidade]        ──> Receita Federal: opcao_pelo_mei            │
-│                             (Fallback: heurística de nome)             │
-│                                    │                                   │
-│                                    ▼                                   │
-│  [Pontuação / Metas]    ──> Mês corrente via dataLocalISO (SP)         │
-│                             Ativação com data customizada ou agora     │
-└────────────────────────────────────────────────────────────────────────┘
+│                        FLUXO DE RETRY & 401 INTERCEPT                  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+          ┌─────────────────────────┼────────────────────────┐
+          ▼                         ▼                        ▼
+ ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+ │  googleSheets    │     │  App.tsx         │     │  googleAuth      │
+ │  Service         │     │  executarComRetry│     │  Service         │
+ ├──────────────────┤     ├──────────────────┤     ├──────────────────┤
+ │ • Fetch status   │────►│ • Captura erro   │────►│ • tentarReauten- │
+ │   401 detectado  │     │   'TOKEN_EXPIRADO'│    │   ticar()        │
+ │ • Lança erro     │     │ • Tenta retry 1x │     │ • Atualiza       │
+ │   'TOKEN_EXPIRADO'│    │ • Se falha:      │     │   sessionStorage │
+ └──────────────────┘     │   pendingSync++  │     └──────────────────┘
+                          └─────────┬────────┘
+                                    │
+                                    ▼
+                          ┌──────────────────┐
+                          │  Header.tsx      │
+                          ├──────────────────┤
+                          │ • pendingSync > 0│
+                          │   -> Ponto       │
+                          │   VERMELHO com   │
+                          │   badge numérico │
+                          └──────────────────┘
 ```
 
 ---
 
-## 2. Mudanças por Arquivo
+### 2. Detalhamento Técnico das Modificações
 
-### 1) `src/types/crm.ts`
-- Garantir a presença de `dataCompletaReceita?: { opcao_pelo_mei?: boolean; [key: string]: any }` na interface `Lead`.
-- Manter todos os campos existentes como opcionais e imutáveis.
+#### 2.1. `src/services/googleAuthService.ts`
+- **`tentarReautenticar(): Promise<boolean>`**:
+  - Verifica se há sessão ativa (`auth.currentUser`).
+  - Executa `signInWithPopup(auth, provider)` para obter credencial renovada sem perder contexto.
+  - Grava o novo token e timestamp de expiração (`Date.now() + 55 * 60 * 1000`) em `sessionStorage` (`ictx_google_token`).
+  - Atualiza a variável `cachedAccessToken`.
+  - Retorna `true` se bem-sucedido; em caso de bloqueio de popup ou recusa, captura e retorna `false`.
+- **`garantirTokenValido(): Promise<string | null>`**:
+  - Inspeciona o token gravado em `sessionStorage`.
+  - Se faltar menos de 60 segundos para expirar (ou já expirado), invoca `tentarReautenticar()`.
+  - Retorna o token válido ou `null` caso não consiga renovar.
 
-### 2) `src/utils/ativacao.ts`
-- **Função de Abertura**: Atualizar `obterDataReferenciaAbertura(lead)` (e exportar `abertura(lead)`) para usar apenas `lead.dataAbertura ?? lead.dataFechamento?.slice(0, 10) ?? null`, eliminando completamente `dataUltimoContato`.
-- **Parâmetro de Ativação**: Adicionar 3º parâmetro opcional `dataAtivacao?: string` em `definirPix` e `definirMaquinaVendas`. Se ausente, usa `dataLocalISO(agora)`.
-- **Helpers de Correção**:
-  - `export function corrigirDataAtivacaoConta(lead: Lead, dataISO: string): Lead`
-  - `export function corrigirDataAtivacaoMaquina(lead: Lead, dataISO: string): Lead`
-  - `export function definirFitEnergia(lead: Lead, dataISO: string | undefined): Lead`
-- **Autoteste**: Atualizar `selfTestAtivacao()` para cobrir as novas assinaturas e validar que `dataUltimoContato` não gera mais fase.
+#### 2.2. `src/services/googleSheetsService.ts`
+- Em `saveAllLeadsToSheet`, `fetchLeadsFromSheet` e `appendContactLogToSheet`:
+  - Verificar se a resposta HTTP retornou status `401`.
+  - Caso `status === 401`, lançar explicitamente `new Error('TOKEN_EXPIRADO')`.
+  - Não tentar tratar ou renovar o token internamente no serviço; delega o retry para a camada de orquestração (`App.tsx`).
 
-### 3) `src/utils/pontos.ts`
-- **Fuso Local**: Importar `dataLocalISO` de `./ativacao` e substituir todas as ocorrências de `toISOString().slice(0, 7)` em `potencial()` e helpers de mês.
-- **Elegibilidade**: Atualizar `elegivel(lead)` para checar `(lead as any).dataCompletaReceita?.opcao_pelo_mei`.
-- **Autoteste**: Expandir `selfTestPontos()` com casos de elegibilidade pela Receita (`opcao_pelo_mei === false` elegível mesmo com `isMei: true`, `opcao_pelo_mei === true` inelegível).
+#### 2.3. `src/App.tsx`
+- **Novo Estado**:
+  - `const [pendingSyncCount, setPendingSyncCount] = useState(0);`
+- **Função de Cálculo de Pendências Locais**:
+  - `calcularPendenciasLocais(): number`: compara os leads atuais com `ictx_sync_base` usando `hashLead(l)`.
+  - Atualiza `pendingSyncCount` quando há alterações ou quando o estado do sync muda.
+- **Orquestrador `executarComRetry(fn: () => Promise<void>)`**:
+  - Executa a operação assíncrona.
+  - Se capturar `TOKEN_EXPIRADO`, chama `tentarReautenticar()`. Se retornar `true`, tenta executar `fn()` mais uma vez.
+  - Se a renovação falhar ou o retry falhar, incrementa `pendingSyncCount` e registra warning no console.
+- **Integração**:
+  - Envolver os fluxos de save debounced e salvamento pós-atualização de status (`handleUpdateLeadStatus`).
+  - Passar `pendingSyncCount={pendingSyncCount}` para `<Header />`.
 
-### 4) `src/services/cnpjService.ts`
-- Em `autocorrigeLead`: adicionar migração idempotente de `dataAbertura -> cnpjInicio` apenas quando `lead.dataAbertura && !lead.cnpjInicio && lead.status !== 'fechado'`.
+#### 2.4. `src/components/Header.tsx`
+- Adicionar prop `pendingSyncCount?: number` na interface `HeaderProps`.
+- No botão do Google Sheets:
+  - Se `pendingSyncCount > 0` e conectado: exibe ponto **VERMELHO** com badge numérico (ex: "3"), animação e tooltip `"${pendingSyncCount} lead(s) pendente(s) de sync"`.
+  - Se `pendingSyncCount === 0` e conectado: ponto verde padrão de conectado.
+  - Se `isGoogleSyncing`: ponto âmbar pulsante.
+  - Se desconectado: mantém estado padrão.
 
-### 5) `src/App.tsx`
-- Em `handleUpdateLeadStatus`: gravar `dataFechamento: new Date().toISOString()` ao transicionar para `fechado` se ainda não preenchido.
-- No `useEffect` de migração: substituir a migração com `MIGRATION_FLAG` pela verificação idempotente por lead, respeitando `lead.status !== 'fechado'`.
-
-### 6) `REGRAS.md`
-- Atualizar a seção §7 ("Definições críticas") com as novas diretrizes de `dataFechamento`, elegibilidade pela Receita, fuso horário local e Fit Energia.
+#### 2.5. `REGRAS.md` (§3)
+- Registrar na seção §3 as regras de tratamento de token expirado (401), silent refresh com `signInWithPopup`, contagem de pendências contra `ictx_sync_base` e feedback visual no Header.
 
 ---
 
-## 3. Critérios de Aceite e Verificação
-
-1. **Compilação**: `lint_applet` e `compile_applet` sem erros.
-2. **Autotestes**: `selfTestAtivacao()` e `selfTestPontos()` retornando `[]`.
-3. **Buscas de Validação**:
-   - `grep` por `dataUltimoContato` na cadeia de abertura -> 0 resultados.
-   - `grep` por `toISOString().slice(0, 7)` em `pontos.ts` -> 0 resultados.
-   - `grep` por `opcao_pelo_mei` em `pontos.ts` -> presente em `elegivel()`.
-4. **Sem Alterações Fora do Escopo**: Nenhuma tela ou componente de UI modificado.
+### 3. Validação e Critérios de Aceite
+1. Compilação TypeScript com 0 erros (`npm run build` / `compile_applet`).
+2. Exatamente os 5 arquivos de escopo tocados.
+3. `selfTestAtivacao()`, `selfTestPontos()` e `selfTestMerge()` passando com `[]`.
+4. Validação do `TOKEN_EXPIRADO` em `googleSheetsService.ts`.
+5. Validação de `tentarReautenticar` em `googleAuthService.ts`.
+6. Validação de `pendingSyncCount` em `App.tsx` e `Header.tsx`.

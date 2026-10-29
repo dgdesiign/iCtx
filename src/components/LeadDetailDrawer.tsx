@@ -37,7 +37,11 @@ import {
   contaAtiva,
   maquinaAtiva,
   produtosVendidos,
-  ATIVACAO_CFG
+  ATIVACAO_CFG,
+  corrigirDataAtivacaoConta,
+  corrigirDataAtivacaoMaquina,
+  definirFitEnergia,
+  dataLocalISO
 } from '../utils/ativacao';
 
 interface LeadDetailDrawerProps {
@@ -312,97 +316,204 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
               : 'Expirado';
             
             return (
-              <div className={`p-2 border rounded-lg ${bg} flex flex-wrap items-center gap-2 text-[11px] font-medium`}>
-                {/* Credenciamento */}
-                {!lead.dataAbertura && lead.status === 'fechado' ? (
-                  <button
-                    type="button"
-                    onClick={() => setWizardAberto(true)}
-                    className="px-2 py-1 rounded-md bg-emerald-600 text-white text-[10px] font-bold hover:bg-emerald-700 flex items-center gap-1 cursor-pointer"
-                  >
-                    <Sparkles className="w-3 h-3" />
-                    Iniciar credenciamento
-                  </button>
-                ) : onUpdateLead ? (
-                  <label className="flex items-center gap-1 cursor-pointer hover:bg-white/60 rounded px-1.5 py-0.5">
-                    <Calendar className="w-3 h-3 text-slate-500" />
-                    <span className="text-slate-600">Credenciado:</span>
-                    <input
-                      type="date"
-                      value={lead.dataAbertura || ''}
-                      onChange={(e) => onUpdateLead({ ...lead, dataAbertura: e.target.value || undefined })}
-                      className="bg-transparent border-none text-[11px] font-bold text-slate-800 focus:outline-none w-auto"
-                    />
-                  </label>
-                ) : (
-                  <span className="text-slate-600">Credenciado: {lead.dataAbertura || '—'}</span>
-                )}
-                
-                <span className="text-slate-300">·</span>
-                
-                {/* PIX */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!onUpdateLead) return;
-                    const atual = lead.pixCount || 0;
-                    const novo = (atual + 1) % 4; // 0→1→2→3→0
-                    onUpdateLead(definirPix(lead, novo));
-                  }}
-                  className={`flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/60 ${
-                    cA ? 'text-emerald-700' : (lead.pixCount||0) > 0 ? 'text-amber-700' : 'text-slate-500'
-                  }`}
-                  title="Clique para alternar: 0→1→2→3→0"
-                >
-                  <QrCode className="w-3 h-3" />
-                  <span className="font-bold">{lead.pixCount || 0}/3</span>
-                  {cA && <CheckCircle2 className="w-3 h-3" />}
-                </button>
-                
-                <span className="text-slate-300">·</span>
-                
-                {/* Máquina */}
-                <label className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/60 cursor-pointer">
-                  <CreditCard className={`w-3 h-3 ${mA ? 'text-emerald-700' : (lead.maquinaVendas||0) > 0 ? 'text-amber-700' : 'text-slate-500'}`} />
-                  <span className={`text-[11px] font-bold ${mA ? 'text-emerald-700' : (lead.maquinaVendas||0) > 0 ? 'text-amber-700' : 'text-slate-500'}`}>
-                    R$ {(lead.maquinaVendas || 0).toLocaleString('pt-BR')}
+              <div className="space-y-2">
+                <div className={`p-2 border rounded-lg ${bg} flex flex-wrap items-center gap-2 text-[11px] font-medium`}>
+                  {/* Credenciamento */}
+                  {!lead.dataAbertura && lead.status === 'fechado' ? (
+                    <button
+                      type="button"
+                      onClick={() => setWizardAberto(true)}
+                      className="px-2 py-1 rounded-md bg-emerald-600 text-white text-[10px] font-bold hover:bg-emerald-700 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      Iniciar credenciamento
+                    </button>
+                  ) : onUpdateLead ? (
+                    <label className="flex items-center gap-1 cursor-pointer hover:bg-white/60 rounded px-1.5 py-0.5">
+                      <Calendar className="w-3 h-3 text-slate-500" />
+                      <span className="text-slate-600">Credenciado:</span>
+                      <input
+                        type="date"
+                        value={lead.dataAbertura || ''}
+                        onChange={(e) => onUpdateLead({ ...lead, dataAbertura: e.target.value || undefined })}
+                        className="bg-transparent border-none text-[11px] font-bold text-slate-800 focus:outline-none w-auto"
+                      />
+                    </label>
+                  ) : (
+                    <span className="text-slate-600">Credenciado: {lead.dataAbertura || '—'}</span>
+                  )}
+                  
+                  <span className="text-slate-300">·</span>
+                  
+                  {/* PIX */}
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!onUpdateLead) return;
+                        const atual = lead.pixCount || 0;
+                        const novo = (atual + 1) % 4; // 0→1→2→3→0
+                        onUpdateLead(definirPix(lead, novo));
+                      }}
+                      className={`flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/60 ${
+                        cA ? 'text-emerald-700' : (lead.pixCount||0) > 0 ? 'text-amber-700' : 'text-slate-500'
+                      }`}
+                      title="Clique para alternar: 0→1→2→3→0"
+                    >
+                      <QrCode className="w-3 h-3" />
+                      <span className="font-bold">{lead.pixCount || 0}/3</span>
+                      {cA && <CheckCircle2 className="w-3 h-3" />}
+                    </button>
+                    {cA && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const novaData = window.prompt(
+                            'Data de ativação (YYYY-MM-DD):',
+                            lead.contaAtivaEm || ''
+                          );
+                          if (novaData && /^\d{4}-\d{2}-\d{2}$/.test(novaData)) {
+                            onUpdateLead?.(corrigirDataAtivacaoConta(lead, novaData));
+                          }
+                        }}
+                        className="w-4 h-4 p-0.5 text-slate-400 hover:text-emerald-700 rounded hover:bg-white/60 transition-colors flex items-center justify-center cursor-pointer"
+                        title="Editar data de ativação do PIX"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                  
+                  <span className="text-slate-300">·</span>
+                  
+                  {/* Máquina */}
+                  <div className="flex items-center gap-0.5">
+                    <label className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/60 cursor-pointer">
+                      <CreditCard className={`w-3 h-3 ${mA ? 'text-emerald-700' : (lead.maquinaVendas||0) > 0 ? 'text-amber-700' : 'text-slate-500'}`} />
+                      <span className={`text-[11px] font-bold ${mA ? 'text-emerald-700' : (lead.maquinaVendas||0) > 0 ? 'text-amber-700' : 'text-slate-500'}`}>
+                        R$ {(lead.maquinaVendas || 0).toLocaleString('pt-BR')}
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={50}
+                        placeholder="+"
+                        onBlur={(e) => {
+                          if (!onUpdateLead) return;
+                          const v = Number(e.target.value);
+                          if (v > 0) {
+                            onUpdateLead(registrarVendaMaquina(lead, v));
+                            e.target.value = '';
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            (e.target as HTMLInputElement).blur();
+                          }
+                        }}
+                        className="w-12 bg-transparent border-b border-slate-300 text-[10px] focus:outline-none focus:border-emerald-600"
+                      />
+                    </label>
+                    {mA && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const novaData = window.prompt(
+                            'Data de ativação (YYYY-MM-DD):',
+                            lead.maquinaAtivaEm || ''
+                          );
+                          if (novaData && /^\d{4}-\d{2}-\d{2}$/.test(novaData)) {
+                            onUpdateLead?.(corrigirDataAtivacaoMaquina(lead, novaData));
+                          }
+                        }}
+                        className="w-4 h-4 p-0.5 text-slate-400 hover:text-emerald-700 rounded hover:bg-white/60 transition-colors flex items-center justify-center cursor-pointer"
+                        title="Editar data de ativação da Máquina"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                  
+                  <span className="text-slate-300">·</span>
+
+                  {/* Fit Energia */}
+                  {lead.status === 'fechado' && (
+                    <label
+                      className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/60 cursor-pointer"
+                      title="Fit Energia contratado (+1 pt)"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!lead.fitContratadoEm}
+                        onChange={(e) => {
+                          if (!onUpdateLead) return;
+                          if (e.target.checked) {
+                            onUpdateLead(definirFitEnergia(lead, dataLocalISO(new Date())));
+                          } else {
+                            onUpdateLead(definirFitEnergia(lead, undefined));
+                          }
+                        }}
+                        className="w-3 h-3 rounded"
+                      />
+                      <span className={`text-[10px] font-bold ${
+                        lead.fitContratadoEm ? 'text-emerald-700' : 'text-slate-500'
+                      }`}>
+                        Fit
+                      </span>
+                    </label>
+                  )}
+                  
+                  <span className="text-slate-300">·</span>
+                  
+                  {/* Fase */}
+                  <span className={`flex items-center gap-1 font-bold ${faseCor}`}>
+                    <Clock className="w-3 h-3" />
+                    {faseLabel}
                   </span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={50}
-                    placeholder="+"
-                    onBlur={(e) => {
-                      if (!onUpdateLead) return;
-                      const v = Number(e.target.value);
-                      if (v > 0) {
-                        onUpdateLead(registrarVendaMaquina(lead, v));
-                        e.target.value = '';
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        (e.target as HTMLInputElement).blur();
-                      }
-                    }}
-                    className="w-12 bg-transparent border-b border-slate-300 text-[10px] focus:outline-none focus:border-emerald-600"
-                  />
-                </label>
-                
-                <span className="text-slate-300">·</span>
-                
-                {/* Fase */}
-                <span className={`flex items-center gap-1 font-bold ${faseCor}`}>
-                  <Clock className="w-3 h-3" />
-                  {faseLabel}
-                </span>
-                
-                {/* Status ativa */}
-                {completa && (
-                  <span className="ml-auto text-emerald-700 font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" /> Ativa
-                  </span>
-                )}
+                  
+                  {/* Status ativa */}
+                  {completa && (
+                    <span className="ml-auto text-emerald-700 font-bold flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Ativa
+                    </span>
+                  )}
+                </div>
+
+                {/* Banner de Retenção M2 */}
+                {(() => {
+                  if (j?.fase !== 'M2') return null;
+                  return (
+                    <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] flex items-center justify-between">
+                      <span className="text-amber-900 font-medium">
+                        Fase M2 — este cliente ainda está ativo?
+                      </span>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => onUpdateLead?.({
+                            ...lead,
+                            contaEncerradaEm: undefined,
+                            maquinaEncerradaEm: undefined,
+                          })}
+                          className="px-2 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-bold cursor-pointer"
+                        >
+                          Sim, ativo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onUpdateLead?.({
+                            ...lead,
+                            contaEncerradaEm: dataLocalISO(new Date()),
+                            maquinaEncerradaEm: dataLocalISO(new Date()),
+                          })}
+                          className="px-2 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] font-bold cursor-pointer"
+                        >
+                          Não, encerrou
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })()}

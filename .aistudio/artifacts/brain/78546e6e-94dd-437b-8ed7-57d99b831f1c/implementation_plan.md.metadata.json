@@ -1,6 +1,6 @@
 {
-  "summary":  "Plano detalhado de implementação para o S-DINHEIRO-A cobrindo base de dados, dataFechamento ao fechar, campo editável de ativação, migração idempotente de leads, uso estrito de fuso local, elegibilidade oficial da Receita Federal e suporte a Fit Energia.",
-  "updatedAt":  "2026-10-28T10:54:26.904549425Z",
+  "summary":  "Plano detalhado de implementação para o S-ATIVAÇÃO-A: tratamento e interceptação de 401 (TOKEN_EXPIRADO), retry silencioso via tentarReautenticar e garantirTokenValido em googleAuthService, auto-save com retry em App.tsx, cálculo de pendências locais e indicador visual com badge vermelho no Header.",
+  "updatedAt":  "2026-10-28T13:14:43.335899909Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

@@ -51,6 +51,7 @@ import {
   initAuth,
   getAccessToken,
   setCachedAccessToken,
+  tentarReautenticar,
 } from './services/googleAuthService';
 import {
   findOrCreateSpreadsheet,
@@ -75,6 +76,8 @@ const salvarBaseSync = (listaLeads: Lead[]) => {
     const base: Record<string, string> = {};
     for (const l of listaLeads) {
       if (l && l.id && !isSampleLeadId(l.id)) {
+        const chave = l.cnpj || ('id:' + l.id);
+        base[chave] = hashLead(l);
         base[l.id] = hashLead(l);
       }
     }
@@ -207,6 +210,57 @@ export default function App() {
     }).length;
   }, [leads, currentUser]);
 
+  // Contagem de pendências de sync e helper de retry (S-ATIVAÇÃO-A)
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+
+  function calcularPendenciasLocais(): number {
+    const baseRaw = localStorage.getItem('ictx_sync_base');
+    if (!baseRaw) return leads.length;
+    try {
+      const base: Record<string, string> = JSON.parse(baseRaw);
+      let pendentes = 0;
+      leads.forEach((l) => {
+        if (!l || !l.id || isSampleLeadId(l.id)) return;
+        const cnpj = l.cnpj || ('id:' + l.id);
+        if (base[cnpj] !== hashLead(l)) pendentes++;
+      });
+      return pendentes;
+    } catch {
+      return leads.length;
+    }
+  }
+
+  async function executarComRetry(fn: () => Promise<void>): Promise<void> {
+    try {
+      await fn();
+      setPendingSyncCount(0);
+    } catch (e: any) {
+      if (e?.message === 'TOKEN_EXPIRADO') {
+        const renovado = await tentarReautenticar();
+        if (renovado) {
+          try {
+            await fn(); // retry uma vez
+            setPendingSyncCount(0);
+            return;
+          } catch {
+            // fallback abaixo
+          }
+        }
+        setPendingSyncCount((prev) => prev + 1);
+        console.warn('[sync] token expirado, pendências:', pendingSyncCount + 1);
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  // Recalcula pendingSyncCount quando leads ou spreadsheet mudam (se não estiver salvando)
+  useEffect(() => {
+    if (!isSavingToSheetRef.current && currentUser && spreadsheet?.id) {
+      setPendingSyncCount(calcularPendenciasLocais());
+    }
+  }, [leads, spreadsheet?.id, currentUser]);
+
   // Travas de proteção para evitar loops e sobrescritas destrutivas
   const isInitialMountRef = useRef(true);
   const isLoadingFromSheetRef = useRef(false);
@@ -300,18 +354,23 @@ export default function App() {
     const timeout = setTimeout(async () => {
       try {
         if (isLoadingFromSheetRef.current) return;
-        const token = await getAccessToken();
-        if (token && spreadsheet && pendingSaveLeadsRef.current) {
-          isSavingToSheetRef.current = true;
-          setIsGoogleSyncing(true);
-          const dadosParaSalvar = pendingSaveLeadsRef.current;
+        if (!spreadsheet?.id || !pendingSaveLeadsRef.current) return;
+
+        isSavingToSheetRef.current = true;
+        setIsGoogleSyncing(true);
+        const dadosParaSalvar = pendingSaveLeadsRef.current;
+
+        await executarComRetry(async () => {
+          const token = await getAccessToken();
+          if (!token) throw new Error('TOKEN_EXPIRADO');
           await saveAllLeadsToSheet(spreadsheet.id, dadosParaSalvar, token);
-          salvarBaseSync(dadosParaSalvar);
-          pendingSaveLeadsRef.current = null;
-          const agora = new Date().toISOString();
-          setLastSyncTime(agora);
-          localStorage.setItem('ictx_last_sync_time', agora);
-        }
+        });
+
+        salvarBaseSync(dadosParaSalvar);
+        pendingSaveLeadsRef.current = null;
+        const agora = new Date().toISOString();
+        setLastSyncTime(agora);
+        localStorage.setItem('ictx_last_sync_time', agora);
       } catch (err) {
         console.warn('Auto-save no Google Sheets falhou:', err);
       } finally {
@@ -423,6 +482,22 @@ export default function App() {
     localStorage.setItem(MIGRATION_FLAG, 'true');
   }, []);
 
+  // Backfill dataFechamento para leads em "fechado" (ITEM 1 — S-DINHEIRO-B)
+  useEffect(() => {
+    let alterado = false;
+    const leadsBackfillados = leads.map(l => {
+      if (l.status === 'fechado' && !l.dataFechamento) {
+        alterado = true;
+        return {
+          ...l,
+          dataFechamento: l.atualizadoEm || l.dataUltimoContato || new Date().toISOString(),
+        } as Lead;
+      }
+      return l;
+    });
+    if (alterado) setLeads(leadsBackfillados);
+  }, []); // só mount
+
   // Handlers de status e histórico
   const handleUpdateLeadStatus = (
     leadId: string,
@@ -489,6 +564,19 @@ export default function App() {
 
       return atualizados;
     });
+
+    // Dispara auto-save com retry se conectado e merge inicial concluído (S-ATIVAÇÃO-A)
+    if (currentUser && spreadsheet?.id && firstMergeDoneRef.current) {
+      executarComRetry(async () => {
+        const token = await getAccessToken();
+        if (!token) throw new Error('TOKEN_EXPIRADO');
+        const leadsAtuais = carregarLeads();
+        await saveAllLeadsToSheet(spreadsheet.id, leadsAtuais, token);
+        salvarBaseSync(leadsAtuais);
+      }).catch((e) => {
+        console.warn('[sync] auto-save pós status falhou:', e);
+      });
+    }
   };
 
   const handleConnectGoogle = async () => {
@@ -515,7 +603,10 @@ export default function App() {
         return merged;
       });
 
-      await saveAllLeadsToSheet(sheetInfo.id, listaMerged, authResult.accessToken);
+      await executarComRetry(async () => {
+        await saveAllLeadsToSheet(sheetInfo.id, listaMerged, authResult.accessToken);
+      });
+
       salvarBaseSync(listaMerged);
       firstMergeDoneRef.current = true;
 
@@ -550,7 +641,11 @@ export default function App() {
       }
 
       if (targetSheetId) {
-        await saveAllLeadsToSheet(targetSheetId, leads, token);
+        await executarComRetry(async () => {
+          const currentToken = (await getAccessToken()) || token;
+          if (!currentToken) throw new Error('TOKEN_EXPIRADO');
+          await saveAllLeadsToSheet(targetSheetId, leads, currentToken);
+        });
         salvarBaseSync(leads);
         firstMergeDoneRef.current = true;
       }
@@ -578,20 +673,25 @@ export default function App() {
       const sheetId = spreadsheet?.id;
       if (!sheetId) throw new Error('Nenhuma planilha conectada.');
 
-      const leadsDaPlanilha = await fetchLeadsFromSheet(sheetId, token);
-      const base = carregarBaseSync();
-      let listaMerged: Lead[] = [];
-      setLeads((locaisAtuais) => {
-        const { merged, conflitos } = mergeLeads3(locaisAtuais, leadsDaPlanilha, base);
-        if (conflitos > 0) {
-          console.info(`[Sync Merge] ${conflitos} conflito(s) resolvido(s) favorecendo versão local.`);
-        }
-        listaMerged = merged;
-        return merged;
+      await executarComRetry(async () => {
+        const currentToken = (await getAccessToken()) || token;
+        if (!currentToken) throw new Error('TOKEN_EXPIRADO');
+        const leadsDaPlanilha = await fetchLeadsFromSheet(sheetId, currentToken);
+        const base = carregarBaseSync();
+        let listaMerged: Lead[] = [];
+        setLeads((locaisAtuais) => {
+          const { merged, conflitos } = mergeLeads3(locaisAtuais, leadsDaPlanilha, base);
+          if (conflitos > 0) {
+            console.info(`[Sync Merge] ${conflitos} conflito(s) resolvido(s) favorecendo versão local.`);
+          }
+          listaMerged = merged;
+          return merged;
+        });
+
+        await saveAllLeadsToSheet(sheetId, listaMerged, currentToken);
+        salvarBaseSync(listaMerged);
       });
 
-      await saveAllLeadsToSheet(sheetId, listaMerged, token);
-      salvarBaseSync(listaMerged);
       firstMergeDoneRef.current = true;
 
       const agora = new Date().toISOString();
@@ -704,6 +804,7 @@ export default function App() {
         isGoogleConnected={Boolean(currentUser && spreadsheet)}
         isGoogleSyncing={isGoogleSyncing}
         dirtyCount={dirtyCount}
+        pendingSyncCount={pendingSyncCount}
         isSupervisor={usuarioAtivo.role === 'supervisor'}
         usuarioRole={usuarioAtivo.role}
         onOpenSupervisorDashboard={() => setIsSupervisorOpen(true)}

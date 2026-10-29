@@ -29,6 +29,8 @@
   - Habilitado APENAS após o 1º merge da sessão completar (`firstMergeDoneRef`).
   - Debounce de 3s.
   - Em eventos `visibilitychange -> hidden` e `pagehide`, descarrega imediatamente saves pendentes se a sessão for válida.
+  - Token expirado durante sessão: tentativa automática de silent refresh (`signInWithPopup`). Se bloqueado pelo navegador ou recusado, incrementa `pendingSyncCount` e exibe ponto vermelho com badge no Header.
+  - Pendências locais: leads com hash ≠ `ictx_sync_base`. Visíveis no Header via ponto vermelho + tooltip com contagem ("N leads pendentes de sync").
 - Apps Script: existe APENAS para o trigger diário `enviarResumoDiario` 
   (8h). Não processa dados — só lê a aba Leads e envia e-mail resumo.
 - Não usar chunking 45k, insertColumnsAfter, LockService (arquitetura 
@@ -94,11 +96,21 @@ Exemplo:
 
 ### Fit Energia
 - +1 pt por cliente (pago 1x no mês da contratação), soma para bônus conta.
+- No Dossiê: checkbox "Fit" permite marcar/desmarcar a contratação com timestamp de data local.
+
+### Retenção M2 (Operação no Dossiê)
+- Se o lead estiver na janela M2, o Dossiê exibe banner de validação: "Fase M2 — este cliente ainda está ativo?".
+- "Sim, ativo": limpa datas de encerramento (`contaEncerradaEm` e `maquinaEncerradaEm`), garantindo 50% de pontos de retenção.
+- "Não, encerrou": registra data de encerramento no fuso local.
+
+### Correção de Datas de Ativação
+- Botão "✎" discreto visível ao lado de PIX e Máquina quando ativos para correção pontual de data via prompt (`YYYY-MM-DD`).
 
 ### Bônus mensais (cumulativos escalonados, avaliados todo mês sobre os pontos DO MÊS)
 - **Conta**: 60 → R$1.000; 80 → R$2.000; 100 → R$3.000; 130 → R$4.000 (acumulados: até R$10.000).
 - **Getnet**: 25 → R$1.000; 40 → R$2.000; 55 → R$3.000; 85 → R$5.000 (acumulados: até R$11.000).
 - **Campanha equipe** (só M0/M1 validados): 50 → R$1.500; 60 → R$2.500; 80 → R$4.000; 100 → R$5.000 (acumulados: até R$13.000).
+- **Ativação de Bônus de Equipe**: 5º card no Painel do Supervisor com toggle persistido por mês (`ictx_equipe_bateu_[YYYY-MM]`).
 
 ### Reativação
 - Cliente que parou de usar por 6–12 meses pode ser recredenciado.

@@ -114,35 +114,24 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
  * Retorna o token de acesso ativo (em memória ou restaurado de sessionStorage se não expirado)
  */
 export const getAccessToken = async (): Promise<string | null> => {
-  if (cachedAccessToken) {
-    try {
-      const raw = sessionStorage.getItem(SESSION_KEY);
-      if (raw) {
-        const parsed: StoredSession = JSON.parse(raw);
-        if (parsed.expiresAt <= Date.now() + 60 * 1000) {
-          cachedAccessToken = null;
-          sessionStorage.removeItem(SESSION_KEY);
-          return null;
-        }
-      }
-    } catch {}
-    return cachedAccessToken;
-  }
-
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
-    if (raw) {
-      const parsed: StoredSession = JSON.parse(raw);
-      if (parsed.accessToken && parsed.expiresAt > Date.now() + 60 * 1000) {
-        cachedAccessToken = parsed.accessToken;
-        return cachedAccessToken;
-      } else {
-        sessionStorage.removeItem(SESSION_KEY);
-      }
+    if (!raw) {
+      cachedAccessToken = null;
+      return null;
     }
-  } catch {}
-
-  return null;
+    const parsed: StoredSession = JSON.parse(raw);
+    if (!parsed.accessToken || parsed.expiresAt <= Date.now() + 60 * 1000) {
+      cachedAccessToken = null;
+      sessionStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+    cachedAccessToken = parsed.accessToken;
+    return cachedAccessToken;
+  } catch {
+    cachedAccessToken = null;
+    return null;
+  }
 };
 
 /**
@@ -174,3 +163,62 @@ export const logoutGoogle = async () => {
     sessionStorage.removeItem(SESSION_KEY);
   } catch {}
 };
+
+/**
+ * Tenta reautenticar via popup caso haja sessão ativa no Firebase.
+ * Se bem-sucedido, grava novo token em sessionStorage e atualiza cache.
+ * Se bloqueado pelo navegador ou sem sessão, retorna false.
+ */
+export async function tentarReautenticar(): Promise<boolean> {
+  if (!auth.currentUser) {
+    return false;
+  }
+
+  try {
+    const result = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) {
+      return false;
+    }
+
+    cachedAccessToken = credential.accessToken;
+    const expiresAt = Date.now() + 55 * 60 * 1000;
+    try {
+      sessionStorage.setItem(
+        SESSION_KEY,
+        JSON.stringify({ accessToken: cachedAccessToken, expiresAt })
+      );
+    } catch {}
+
+    return true;
+  } catch (error) {
+    console.warn('[googleAuth] Falha na reautenticação automática (popup bloqueado ou cancelado):', error);
+    return false;
+  }
+}
+
+/**
+ * Garante um token válido de acesso. Se expirado ou próximo de expirar (< 60s),
+ * tenta silent refresh via tentarReautenticar(). Retorna o token ou null.
+ */
+export async function garantirTokenValido(): Promise<string | null> {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (raw) {
+      const parsed: StoredSession = JSON.parse(raw);
+      const agora = Date.now();
+      if (parsed.accessToken && parsed.expiresAt > agora + 60 * 1000) {
+        cachedAccessToken = parsed.accessToken;
+        return cachedAccessToken;
+      }
+    }
+  } catch {}
+
+  const renovado = await tentarReautenticar();
+  if (renovado && cachedAccessToken) {
+    return cachedAccessToken;
+  }
+
+  return null;
+}
+

@@ -29,6 +29,7 @@ interface HeaderProps {
   isGoogleConnected: boolean;
   isGoogleSyncing?: boolean;
   dirtyCount?: number;
+  pendingSyncCount?: number;
   isSupervisor?: boolean;
   usuarioRole?: 'supervisor' | 'executivo';
   onOpenSupervisorDashboard?: () => void;
@@ -50,6 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
   isGoogleConnected,
   isGoogleSyncing = false,
   dirtyCount = 0,
+  pendingSyncCount = 0,
   isSupervisor = false,
   usuarioRole = 'supervisor',
   onOpenSupervisorDashboard,
@@ -138,6 +140,8 @@ export const Header: React.FC<HeaderProps> = ({
               className={`relative w-9 h-9 flex items-center justify-center rounded-xl shadow-2xs transition-colors cursor-pointer shrink-0 ${
                 isGoogleSyncing
                   ? 'bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100'
+                  : isGoogleConnected && pendingSyncCount > 0
+                  ? 'bg-red-50 text-red-800 border border-red-300 hover:bg-red-100'
                   : isGoogleConnected
                   ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
                   : dirtyCount > 0
@@ -147,6 +151,8 @@ export const Header: React.FC<HeaderProps> = ({
               title={
                 isGoogleSyncing
                   ? 'Sincronizando com Google Planilhas...'
+                  : isGoogleConnected && pendingSyncCount > 0
+                  ? `${pendingSyncCount} leads pendentes de sync`
                   : isGoogleConnected
                   ? 'Google Planilhas Conectado e Sincronizado'
                   : dirtyCount > 0
@@ -159,6 +165,8 @@ export const Header: React.FC<HeaderProps> = ({
                 className={`w-4 h-4 ${
                   isGoogleSyncing
                     ? 'text-amber-600 animate-pulse'
+                    : isGoogleConnected && pendingSyncCount > 0
+                    ? 'text-red-600'
                     : isGoogleConnected
                     ? 'text-emerald-600'
                     : dirtyCount > 0
@@ -168,10 +176,12 @@ export const Header: React.FC<HeaderProps> = ({
               />
               {isGoogleSyncing ? (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-500 ring-2 ring-white animate-pulse" />
+              ) : isGoogleConnected && pendingSyncCount > 0 ? (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center justify-center ring-2 ring-white animate-pulse shadow-xs">
+                  {pendingSyncCount}
+                </span>
               ) : isGoogleConnected ? (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
-              ) : dirtyCount > 0 ? (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white animate-pulse" />
               ) : null}
             </button>
 

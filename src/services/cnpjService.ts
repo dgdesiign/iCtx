@@ -653,6 +653,7 @@ export function construirLead(
     empresaParaMensagem: empresaMsg,
     isMeiDesenquadrado: isMeiFinal,
     nomeTitular: analiseMei.nomeTitularExtraido || nomeFormatado,
+    dataCompletaReceita: dadosApi || undefined,
     cnpjInicio: dadosApi?.data_inicio_atividade,
     dataAbertura: undefined,
     idadeEmpresa: idadeInfo.texto,

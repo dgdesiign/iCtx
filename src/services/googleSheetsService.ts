@@ -157,12 +157,21 @@ export async function fetchLeadsFromSheet(
   spreadsheetId: string,
   accessToken: string
 ): Promise<Lead[]> {
-  const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Leads!A2:R`,
-    {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    }
-  );
+  let res: Response;
+  try {
+    res = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Leads!A2:R`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+  } catch (err: any) {
+    throw err;
+  }
+
+  if (res.status === 401) {
+    throw new Error('TOKEN_EXPIRADO');
+  }
 
   if (!res.ok) {
     const errorText = await res.text();
@@ -288,19 +297,28 @@ export async function saveAllLeadsToSheet(
   const rowFinal = rows.length + 1; // Linha 1 é cabeçalho; dados vão de A2 até R(rowFinal)
 
   // 2. Escreve diretamente no intervalo A2:R(rowFinal) sem apagar a planilha antes
-  const updateRes = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Leads!A2:R${rowFinal}?valueInputOption=USER_ENTERED`,
-    {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        values: rows,
-      }),
-    }
-  );
+  let updateRes: Response;
+  try {
+    updateRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Leads!A2:R${rowFinal}?valueInputOption=USER_ENTERED`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          values: rows,
+        }),
+      }
+    );
+  } catch (err: any) {
+    throw err;
+  }
+
+  if (updateRes.status === 401) {
+    throw new Error('TOKEN_EXPIRADO');
+  }
 
   if (!updateRes.ok) {
     const errorText = await updateRes.text();
@@ -344,19 +362,34 @@ export async function appendContactLogToSheet(
     log.mensagemEnviada || log.observacao || '',
   ];
 
-  await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/HistoricoContatos!A:G:append?valueInputOption=USER_ENTERED`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        values: [row],
-      }),
-    }
-  );
+  let appendRes: Response;
+  try {
+    appendRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/HistoricoContatos!A:G:append?valueInputOption=USER_ENTERED`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          values: [row],
+        }),
+      }
+    );
+  } catch (err: any) {
+    throw err;
+  }
+
+  if (appendRes.status === 401) {
+    throw new Error('TOKEN_EXPIRADO');
+  }
+
+  if (!appendRes.ok) {
+    const errorText = await appendRes.text();
+    console.error('Erro ao registrar histórico no Sheets:', errorText);
+    throw new Error(`Falha ao adicionar log de contato: ${appendRes.statusText}`);
+  }
 }
 
 export const APPS_SCRIPT_SNIPPET = `function enviarResumoDiario() {

@@ -69,6 +69,26 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
   const [executivoSelecionado, setExecutivoSelecionado] = useState<string>('todos');
   const [filtroMinCnae, setFiltroMinCnae] = useState<number>(3); // Default 3 conforme prompt, ajustável para 1 se base pequena
 
+  // Bônus Equipe (ITEM 6 — S-DINHEIRO-B)
+  const mesAtual = useMemo(() => new Date().toISOString().slice(0, 7), []);
+  const [equipeBateu, setEquipeBateu] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem('ictx_equipe_bateu_' + mesAtual) ?? localStorage.getItem('ictx_equipe_bateu_meta_' + mesAtual);
+      return v === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ictx_equipe_bateu_' + mesAtual, String(equipeBateu));
+      localStorage.setItem('ictx_equipe_bateu_meta_' + mesAtual, String(equipeBateu));
+    } catch {
+      // silencioso
+    }
+  }, [equipeBateu, mesAtual]);
+
   // Leads do escopo ativo (Consolidado de toda a equipe ou de um executivo específico)
   const leadsAtivos = useMemo(() => {
     if (executivoSelecionado === 'todos') {
@@ -315,7 +335,6 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
       });
   }, [leadsAtivos, modoGeo, focoStatusGeo]);
 
-  const mesAtual = useMemo(() => new Date().toISOString().slice(0, 7), []);
   const pontosEscopo = useMemo(() => pontosMes(leadsAtivos, mesAtual), [leadsAtivos, mesAtual]);
   const taxaFechamentoEscopo = leadsAtivos.length > 0
     ? Math.round((leadsAtivos.filter((l) => l.status === 'fechado').length / leadsAtivos.length) * 100)
@@ -435,8 +454,8 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
             )}
           </div>
 
-          {/* Hero KPIs (4 cards) */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* Hero KPIs (5 cards) */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-4">
               <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
                 Total de Pontos
@@ -477,6 +496,30 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
               <span className="text-[11px] text-slate-400 mt-1 block">
                 {leadsAtivos.filter((l) => l.status === 'fechado').length} de {leadsAtivos.length} leads
               </span>
+            </div>
+
+            {/* 5º Card: Bônus Equipe (ITEM 6) */}
+            <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-4 flex flex-col justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase text-slate-500 mb-1">
+                  Equipe bateu meta?
+                </p>
+                <div className="flex items-center gap-2 mt-2">
+                  <input
+                    type="checkbox"
+                    id="equipe-bateu-meta"
+                    checked={equipeBateu}
+                    onChange={(e) => setEquipeBateu(e.target.checked)}
+                    className="w-4 h-4 rounded cursor-pointer accent-emerald-600"
+                  />
+                  <label htmlFor="equipe-bateu-meta" className="text-xs font-semibold text-slate-700 cursor-pointer">
+                    Sim
+                  </label>
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-2">
+                Ativa bônus de equipe (M0/M1)
+              </p>
             </div>
           </div>
           
@@ -784,7 +827,12 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
                         </td>
 
                         <td className="py-3 px-3 text-right font-black text-slate-900 tabular-nums text-sm">
-                          {exec.pontosReais.toLocaleString('pt-BR')} pts
+                          <div>{exec.pontosReais.toLocaleString('pt-BR')} pts</div>
+                          {equipeBateu && (
+                            <span className="text-[10px] text-emerald-600 font-bold block">
+                              + bônus equipe
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );
