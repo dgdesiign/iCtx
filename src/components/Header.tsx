@@ -9,10 +9,10 @@ import {
   TrendingUp,
   CheckCircle2,
   Smartphone,
-  Send,
   BarChart3,
   Bell,
   BellRing,
+  Target,
 } from 'lucide-react';
 import { Lead } from '../types/crm';
 import { NotificationStatus } from '../services/notificationService';
@@ -22,7 +22,6 @@ interface HeaderProps {
   onOpenBulkImport: () => void;
   onOpenSingleLead: () => void;
   onOpenTemplates: () => void;
-  onOpenBatchMessages: () => void;
   onExportCsv: () => void;
   onOpenInstallModal: () => void;
   onOpenGoogleSheets: () => void;
@@ -33,6 +32,7 @@ interface HeaderProps {
   isSupervisor?: boolean;
   usuarioRole?: 'supervisor' | 'executivo';
   onOpenSupervisorDashboard?: () => void;
+  onOpenMetas?: () => void;
   onToggleRole?: () => void;
   onOpenNotifications?: () => void;
   notificationStatus?: NotificationStatus;
@@ -44,7 +44,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenBulkImport,
   onOpenSingleLead,
   onOpenTemplates,
-  onOpenBatchMessages,
   onExportCsv,
   onOpenInstallModal,
   onOpenGoogleSheets,
@@ -55,6 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
   isSupervisor = false,
   usuarioRole = 'supervisor',
   onOpenSupervisorDashboard,
+  onOpenMetas,
   onToggleRole,
   onOpenNotifications,
   notificationStatus = 'default',
@@ -215,15 +215,18 @@ export const Header: React.FC<HeaderProps> = ({
               <MessageSquareText className="w-4 h-4 text-red-600" />
             </button>
 
-            {/* Lote de Mensagens (Sprint 2) */}
-            <button
-              onClick={onOpenBatchMessages}
-              className="w-9 h-9 flex items-center justify-center text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl shadow-2xs transition-colors cursor-pointer shrink-0"
-              title="Lote de Mensagens"
-              aria-label="Lote de Mensagens"
-            >
-              <Send className="w-4 h-4 text-emerald-600" />
-            </button>
+            {/* Minhas Metas & Simulador de Projeção (Sprint R7) */}
+            {onOpenMetas && (
+              <button
+                onClick={onOpenMetas}
+                className="h-9 px-2.5 sm:px-3 flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl shadow-2xs transition-colors cursor-pointer shrink-0"
+                title="Minhas Metas & Simulador de Projeção"
+                aria-label="Minhas Metas"
+              >
+                <Target className="w-4 h-4 text-emerald-600" />
+                <span>Minhas Metas</span>
+              </button>
+            )}
 
             {/* Painel do Supervisor (Sprint 5) - visível somente para role === supervisor */}
             {isSupervisor && (

@@ -18,7 +18,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
-import { SpreadsheetInfo } from '../services/googleSheetsService';
+import { SpreadsheetInfo, APPS_SCRIPT_SNIPPET } from '../services/googleSheetsService';
 
 interface GoogleSheetsSyncModalProps {
   isOpen: boolean;
@@ -33,37 +33,6 @@ interface GoogleSheetsSyncModalProps {
   onFetchFromSheet: () => Promise<void>;
   onDisconnect: () => Promise<void>;
 }
-
-const APPS_SCRIPT_SNIPPET = `function enviarResumoDiario() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var abaDados = ss.getSheetByName("Dados_CRM");
-  if (!abaDados) return;
-  var rows = abaDados.getDataRange().getValues();
-  var resumo = "📊 iCtx — Resumo diário\\n\\n";
-  var hoje = new Date().toDateString();
-  var followupsHoje = 0, fechadosOntem = 0, totalLeads = 0;
-
-  for (var i = 1; i < rows.length; i++) {
-    var json = "";
-    for (var c = 4; c < rows[i].length; c++) if (rows[i][c]) json += rows[i][c];
-    if (!json) continue;
-    try {
-      var payload = JSON.parse(json);
-      (payload.leads || []).forEach(function(l) {
-        totalLeads++;
-        if (l.proximoFollowUp && new Date(l.proximoFollowUp).toDateString() === hoje) followupsHoje++;
-        if (l.status === 'fechado' && l.dataUltimoContato && 
-            new Date(l.dataUltimoContato).toDateString() === new Date(Date.now() - 86400000).toDateString()) fechadosOntem++;
-      });
-    } catch(e) {}
-  }
-
-  resumo += "Total de leads na base: " + totalLeads + "\\n";
-  resumo += "🔔 Follow-ups para hoje: " + followupsHoje + "\\n";
-  resumo += "🎉 Fechados ontem: " + fechadosOntem + "\\n\\n";
-  resumo += "Bora pra cima!";
-  MailApp.sendEmail(Session.getActiveUser().getEmail(), "iCtx · Resumo diário", resumo);
-}`;
 
 export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
   isOpen,

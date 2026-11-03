@@ -392,7 +392,9 @@ export async function appendContactLogToSheet(
   }
 }
 
-export const APPS_SCRIPT_SNIPPET = `function enviarResumoDiario() {
+export const APPS_SCRIPT_SNIPPET = `// ATENÇÃO: Este script replica a lógica de pontos.ts/ativacao.ts do iCtx CRM.
+// Se as regras de pontos mudarem no app, este script precisa ser atualizado manualmente na planilha.
+function enviarResumoDiario() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var abaLeads = ss.getSheetByName("Leads");
   if (!abaLeads) return;
@@ -407,7 +409,7 @@ export const APPS_SCRIPT_SNIPPET = `function enviarResumoDiario() {
 
   var leads = [];
   for (var i = 1; i < rows.length; i++) {
-    var jsonStr = rows[i][17];
+    var jsonStr = rows[i][17]; // Coluna R
     if (!jsonStr || typeof jsonStr !== "string") continue;
     try {
       var l = JSON.parse(jsonStr);
@@ -415,79 +417,75 @@ export const APPS_SCRIPT_SNIPPET = `function enviarResumoDiario() {
     } catch(e) {}
   }
 
-  // ============ HELPERS (espelho de pontos.ts/ativacao.ts) ============
+  // Helpers (espelho de pontos.ts)
   function dataLocalISO(d) {
     var y = d.getFullYear();
     var m = ("0" + (d.getMonth() + 1)).slice(-2);
     var dd = ("0" + d.getDate()).slice(-2);
     return y + "-" + m + "-" + dd;
   }
-  function mesRef(iso) {
-    if (!iso) return "";
-    return String(iso).slice(0, 7);
-  }
-  function maisDeUmAno(l) {
-    if (!l.cnpjInicio) return false;
-    return String(l.cnpjInicio).slice(0, 4) <= String(agora.getFullYear() - 1);
-  }
-  function elegivel(l) {
-    var p = String(l.porte || "").toUpperCase();
-    if (p === "MEI") return false;
-    if (l.isMei === true && l.isMeiDesenquadrado !== true) return false;
-    return true;
-  }
-  function pontosProduto(l, produto, mesAlvo) {
-    if (!elegivel(l)) return 0;
-    var p = { conta: l.vendeuConta !== false, maquina: l.vendeuMaquina !== false };
-    if (produto === "conta" && !p.conta) return 0;
-    if (produto === "getnet" && !p.maquina) return 0;
-    var dataAtiv = produto === "conta" ? l.contaAtivaEm : l.maquinaAtivaEm;
-    if (!dataAtiv) return 0;
-    var mesAb = mesRef(l.dataAbertura);
-    if (!mesAb) return 0;
-    var mesAtiv = mesRef(dataAtiv);
-    var mesM0 = mesAb;
-    var mesM1 = proximoMes(mesAb, 1);
-    var mesM2 = proximoMes(mesAb, 2);
-    var mais = maisDeUmAno(l);
-    var tab = produto === "conta"
-      ? { m01: { menos1ano: 2, mais1ano: 4 }, m2: { menos1ano: 1, mais1ano: 2 } }
-      : { m01: { menos1ano: 4, mais1ano: 6 }, m2: { menos1ano: 2, mais1ano: 3 } };
-    if (mesAtiv === mesM0 || mesAtiv === mesM1) {
-      if (mesAlvo === mesAtiv) return mais ? tab.m01.mais1ano : tab.m01.menos1ano;
-      if (mesAlvo === mesM2) {
-        var enc = produto === "conta" ? l.contaEncerradaEm : l.maquinaEncerradaEm;
-        if (enc && mesRef(enc) <= mesM2) return 0;
-        return Math.floor(mais ? tab.m2.mais1ano : tab.m2.menos1ano);
-      }
-      return 0;
-    }
-    if (mesAtiv === mesM2 && mesAlvo === mesM2) {
-      return Math.floor(mais ? tab.m2.mais1ano : tab.m2.menos1ano);
-    }
-    return 0;
-  }
+  function mesRef(iso) { return iso ? String(iso).slice(0, 7) : ""; }
   function proximoMes(mes, n) {
     var parts = mes.split("-");
     var y = parseInt(parts[0], 10), m = parseInt(parts[1], 10);
     var d = new Date(y, m - 1 + n, 1);
     return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2);
   }
+  function elegivel(l) {
+    var p = String(l.porte || "").toUpperCase();
+    if (p === "MEI") return false;
+    var meiRec = l.dataCompletaReceita && l.dataCompletaReceita.opcao_pelo_mei;
+    if (meiRec === true) return false;
+    if (l.isMei === true && l.isMeiDesenquadrado !== true && meiRec === undefined) return false;
+    return true;
+  }
+  function maisDeUmAno(l, refMes) {
+    if (!l.cnpjInicio) return false;
+    var ani = parseInt(String(l.cnpjInicio).slice(0, 4), 10) + 1;
+    var ref = parseInt(refMes.slice(0, 4), 10);
+    return ref >= ani;
+  }
+  function pontosProduto(l, produto, mesAlvo) {
+    if (!elegivel(l)) return { pts: 0, m01: false };
+    var p = { conta: l.vendeuConta !== false, maquina: l.vendeuMaquina !== false };
+    if (produto === "conta" && !p.conta) return { pts: 0, m01: false };
+    if (produto === "getnet" && !p.maquina) return { pts: 0, m01: false };
+    var dataAtiv = produto === "conta" ? l.contaAtivaEm : l.maquinaAtivaEm;
+    if (!dataAtiv) return { pts: 0, m01: false };
+    var mesAb = mesRef(l.dataAbertura);
+    if (!mesAb) return { pts: 0, m01: false };
+    var mesAtiv = mesRef(dataAtiv);
+    var mesM0 = mesAb, mesM1 = proximoMes(mesAb, 1), mesM2 = proximoMes(mesAb, 2);
+    var mais = maisDeUmAno(l, mesAb);
+    var tab = produto === "conta"
+      ? { m01: { menos1ano: 2, mais1ano: 4 }, m2: { menos1ano: 1, mais1ano: 2 } }
+      : { m01: { menos1ano: 4, mais1ano: 6 }, m2: { menos1ano: 2, mais1ano: 3 } };
+    if (mesAtiv === mesM0 || mesAtiv === mesM1) {
+      if (mesAlvo === mesAtiv) return { pts: mais ? tab.m01.mais1ano : tab.m01.menos1ano, m01: true };
+      if (mesAlvo === mesM2) {
+        var enc = produto === "conta" ? l.contaEncerradaEm : l.maquinaEncerradaEm;
+        if (enc && mesRef(enc) <= mesM2) return { pts: 0, m01: false };
+        return { pts: Math.floor(mais ? tab.m2.mais1ano : tab.m2.menos1ano), m01: false };
+      }
+      return { pts: 0, m01: false };
+    }
+    if (mesAtiv === mesM2 && mesAlvo === mesM2) {
+      return { pts: Math.floor(mais ? tab.m2.mais1ano : tab.m2.menos1ano), m01: false };
+    }
+    return { pts: 0, m01: false };
+  }
   function pontosFit(l, mesAlvo) {
     if (!elegivel(l) || !l.fitContratadoEm) return 0;
     return mesRef(l.fitContratadoEm) === mesAlvo ? 1 : 0;
   }
 
-  // ============ CÁLCULOS DO DIA ============
-  var totalLeads = leads.length;
+  // KPIs do dia
   var leadsFaladosHoje = 0;
   var templatesUsados = {};
   var fechadosHoje = 0;
-  var oportunidadesAmanha = [];
   var oportunidadesHoje = [];
   var travados = [];
-  var emNegociacao = [];
-  var ativos = [];
+  var emNegociacao = 0;
   var fechadosNaoAtivos = [];
 
   leads.forEach(function(l) {
@@ -499,16 +497,13 @@ export const APPS_SCRIPT_SNIPPET = `function enviarResumoDiario() {
     if (contatosHoje.length > 0) {
       leadsFaladosHoje++;
       contatosHoje.forEach(function(c) {
-        if (c.templateTitulo) {
-          templatesUsados[c.templateTitulo] = (templatesUsados[c.templateTitulo] || 0) + 1;
-        }
+        if (c.templateTitulo) templatesUsados[c.templateTitulo] = (templatesUsados[c.templateTitulo] || 0) + 1;
       });
     }
 
     if (l.proximoFollowUp) {
       var dFU = new Date(l.proximoFollowUp);
       if (dFU >= hoje && dFU < amanha) oportunidadesHoje.push(l);
-      if (dFU >= amanha && dFU < new Date(amanha.getTime() + 86400000)) oportunidadesAmanha.push(l);
     }
 
     if (l.status === "fechado") {
@@ -517,53 +512,49 @@ export const APPS_SCRIPT_SNIPPET = `function enviarResumoDiario() {
         var dRef = new Date(refData);
         if (dRef >= hoje && dRef < amanha) fechadosHoje++;
       }
-      var contaAtiva = l.contaAtivaEm && (l.vendeuConta !== false);
-      var maqAtiva = l.maquinaAtivaEm && (l.vendeuMaquina !== false);
-      var isAtiva = contaAtiva && maqAtiva;
-      if (isAtiva) ativos.push(l);
-      else fechadosNaoAtivos.push(l);
+      var isAtiva = l.contaAtivaEm && l.maquinaAtivaEm;
+      if (!isAtiva) fechadosNaoAtivos.push(l);
     }
 
-    if (l.status === "negociacao") emNegociacao.push(l);
-    
+    if (l.status === "negociacao") emNegociacao++;
+
     if (l.status === "contato_2" || l.status === "contato_3") {
       var ref = l.dataUltimoContato || l.atualizadoEm;
       if (ref) {
-        var d = new Date(ref);
-        var dias = Math.floor((hoje.getTime() - d.getTime()) / 86400000);
+        var dias = Math.floor((hoje.getTime() - new Date(ref).getTime()) / 86400000);
         if (dias >= 7) travados.push({ lead: l, dias: dias });
       }
     }
   });
 
-  // ============ PONTOS DO MÊS ============
+  // Pontos do mês
   var ptsConta = 0, ptsGetnet = 0, ptsFit = 0, ptsM01Conta = 0, ptsM01Getnet = 0;
   leads.forEach(function(l) {
-    ptsConta += pontosProduto(l, "conta", mesAtual);
-    ptsGetnet += pontosProduto(l, "getnet", mesAtual);
+    var pc = pontosProduto(l, "conta", mesAtual);
+    var pg = pontosProduto(l, "getnet", mesAtual);
+    ptsConta += pc.pts;
+    ptsGetnet += pg.pts;
     ptsFit += pontosFit(l, mesAtual);
-    // M0/M1 (para gatilho/equipe)
-    var mesAb = mesRef(l.dataAbertura);
-    if (mesAb) {
-      var mesM0 = mesAb;
-      var mesM1 = proximoMes(mesAb, 1);
-      if (mesAtual === mesM0 || mesAtual === mesM1) {
-        ptsM01Conta += pontosProduto(l, "conta", mesAtual);
-        ptsM01Getnet += pontosProduto(l, "getnet", mesAtual);
-      }
-    }
+    if (pc.m01) ptsM01Conta += pc.pts;
+    if (pg.m01) ptsM01Getnet += pg.pts;
   });
   var ptsTotal = ptsConta + ptsGetnet + ptsFit;
   var ptsM01 = ptsM01Conta + ptsM01Getnet;
 
   // Bônus por faixa
   function bonusFaixa(pts, faixas) {
-    var valor = 0;
+    var v = 0;
     for (var i = 0; i < faixas.length; i++) {
-      if (pts >= faixas[i][0]) valor = faixas[i][1];
+      if (pts >= faixas[i][0]) v = faixas[i][1];
       else break;
     }
-    return valor;
+    return v;
+  }
+  function proxFaixa(pts, faixas) {
+    for (var i = 0; i < faixas.length; i++) {
+      if (pts < faixas[i][0]) return { faltam: faixas[i][0] - pts, valor: faixas[i][1], alvo: faixas[i][0] };
+    }
+    return null;
   }
   var faixasConta = [[60,1000],[80,2000],[100,3000],[130,4000]];
   var faixasGetnet = [[25,1000],[40,2000],[55,3000],[85,5000]];
@@ -571,95 +562,100 @@ export const APPS_SCRIPT_SNIPPET = `function enviarResumoDiario() {
   var bonusGetnet = bonusFaixa(ptsGetnet, faixasGetnet);
   var valorBase = ptsTotal * 30;
   var totalMes = valorBase + bonusConta + bonusGetnet;
+  var proxConta = proxFaixa(ptsTotal, faixasConta);
+  var proxGetnet = proxFaixa(ptsGetnet, faixasGetnet);
 
-  // Próxima faixa
-  function proximaFaixa(pts, faixas) {
-    for (var i = 0; i < faixas.length; i++) {
-      if (pts < faixas[i][0]) return { faltam: faixas[i][0] - pts, valor: faixas[i][1], alvo: faixas[i][0] };
-    }
-    return null;
-  }
-  var proxConta = proximaFaixa(ptsTotal, faixasConta);
-  var proxGetnet = proximaFaixa(ptsGetnet, faixasGetnet);
-
-  // ============ HTML DO E-MAIL ============
+  // Montar HTML (estruturado, inline styles para compat Gmail)
   var html = '<div style="font-family: Inter, Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a;">';
-  
+
+  // Header
   html += '<div style="background: #EC0000; color: #fff; padding: 16px; border-radius: 12px 12px 0 0;">';
   html += '<h1 style="margin: 0; font-size: 18px;">iCtx · Resumo ' + Utilities.formatDate(agora, Session.getScriptTimeZone(), "dd/MM/yyyy") + '</h1>';
   html += '<p style="margin: 4px 0 0; font-size: 12px; opacity: 0.9;">Seu dia em 30 segundos</p>';
   html += '</div>';
 
-  // BLOCO 1 — KPIs do dia
-  html += '<div style="background: #f8fafc; padding: 16px;">';
+  // KPIs
+  html += '<div style="background: #f8fafc; padding: 16px; border: 1px solid #e2e8f0; border-top: none;">';
   html += '<table style="width: 100%; border-collapse: collapse;"><tr>';
-  html += '<td style="padding: 8px; text-align: center; border-right: 1px solid #e2e8f0;"><div style="font-size: 22px; font-weight: 800; color: #0f172a;">' + totalLeads + '</div><div style="font-size: 11px; color: #64748b;">Leads na base</div></td>';
+  html += '<td style="padding: 8px; text-align: center; border-right: 1px solid #e2e8f0;"><div style="font-size: 22px; font-weight: 800;">' + leads.length + '</div><div style="font-size: 11px; color: #64748b;">Leads na base</div></td>';
   html += '<td style="padding: 8px; text-align: center; border-right: 1px solid #e2e8f0;"><div style="font-size: 22px; font-weight: 800; color: #2563eb;">' + leadsFaladosHoje + '</div><div style="font-size: 11px; color: #64748b;">Falados hoje</div></td>';
   html += '<td style="padding: 8px; text-align: center; border-right: 1px solid #e2e8f0;"><div style="font-size: 22px; font-weight: 800; color: #059669;">' + fechadosHoje + '</div><div style="font-size: 11px; color: #64748b;">Fechados hoje</div></td>';
-  html += '<td style="padding: 8px; text-align: center;"><div style="font-size: 22px; font-weight: 800; color: #d97706;">' + emNegociacao.length + '</div><div style="font-size: 11px; color: #64748b;">Em negociação</div></td>';
+  html += '<td style="padding: 8px; text-align: center;"><div style="font-size: 22px; font-weight: 800; color: #d97706;">' + emNegociacao + '</div><div style="font-size: 11px; color: #64748b;">Em negociação</div></td>';
   html += '</tr></table>';
   html += '</div>';
 
-  // BLOCO 2 — Ações
-  html += '<div style="background: #fff; padding: 16px; border-top: 1px solid #e2e8f0;">';
-  html += '<h2 style="font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin: 0 0 8px;">Ações prioritárias</h2>';
+  // Ações prioritárias
+  html += '<div style="background: #fff; padding: 16px; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">';
+  html += '<h2 style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin: 0 0 10px;">Ações prioritárias</h2>';
 
   if (oportunidadesHoje.length > 0) {
-    html += '<div style="margin-bottom: 12px;"><div style="font-size: 12px; font-weight: 700; color: #dc2626;">🔔 Follow-ups de hoje (' + oportunidadesHoje.length + ')</div>';
-    oportunidadesHoje.slice(0, 5).forEach(function(l) {
-      html += '<div style="padding: 6px 0; font-size: 12px; border-bottom: 1px solid #f1f5f9;">' + (l.empresaExibicao || l.razaoSocial) + (l.nomeContato ? ' · ' + l.nomeContato : '') + '</div>';
+    html += '<div style="margin-bottom: 12px;"><div style="font-size: 12px; font-weight: 700; color: #dc2626; margin-bottom: 4px;">🔔 Follow-ups de hoje (' + oportunidadesHoje.length + ')</div>';
+    oportunidadesHoje.slice(0, 3).forEach(function(l) {
+      html += '<div style="padding: 4px 0; font-size: 12px; color: #334155;">• ' + (l.empresaExibicao || l.razaoSocial) + (l.nomeContato ? ' · ' + l.nomeContato : '') + '</div>';
     });
+    if (oportunidadesHoje.length > 3) html += '<div style="font-size: 11px; color: #94a3b8; padding: 4px 0;">+ ' + (oportunidadesHoje.length - 3) + ' outros</div>';
     html += '</div>';
   }
 
   if (travados.length > 0) {
-    html += '<div style="margin-bottom: 12px;"><div style="font-size: 12px; font-weight: 700; color: #d97706;">⚠️ Conversas travadas há 7+ dias (' + travados.length + ')</div>';
-    travados.slice(0, 5).forEach(function(t) {
-      html += '<div style="padding: 6px 0; font-size: 12px; border-bottom: 1px solid #f1f5f9;">' + (t.lead.empresaExibicao || t.lead.razaoSocial) + ' · ' + t.dias + 'd</div>';
+    html += '<div style="margin-bottom: 12px;"><div style="font-size: 12px; font-weight: 700; color: #d97706; margin-bottom: 4px;">⚠️ Conversas travadas há 7+ dias (' + travados.length + ')</div>';
+    travados.slice(0, 3).forEach(function(t) {
+      html += '<div style="padding: 4px 0; font-size: 12px; color: #334155;">• ' + (t.lead.empresaExibicao || t.lead.razaoSocial) + ' · ' + t.dias + 'd</div>';
     });
     html += '</div>';
   }
 
   if (fechadosNaoAtivos.length > 0) {
-    html += '<div style="margin-bottom: 12px;"><div style="font-size: 12px; font-weight: 700; color: #059669;">💰 Fechados aguardando ativação (' + fechadosNaoAtivos.length + ')</div>';
-    fechadosNaoAtivos.slice(0, 5).forEach(function(l) {
-      html += '<div style="padding: 6px 0; font-size: 12px; border-bottom: 1px solid #f1f5f9;">' + (l.empresaExibicao || l.razaoSocial) + '</div>';
+    html += '<div style="margin-bottom: 12px;"><div style="font-size: 12px; font-weight: 700; color: #059669; margin-bottom: 4px;">💰 Fechados aguardando ativação (' + fechadosNaoAtivos.length + ')</div>';
+    fechadosNaoAtivos.slice(0, 3).forEach(function(l) {
+      html += '<div style="padding: 4px 0; font-size: 12px; color: #334155;">• ' + (l.empresaExibicao || l.razaoSocial) + '</div>';
     });
     html += '</div>';
   }
+
+  if (oportunidadesHoje.length === 0 && travados.length === 0 && fechadosNaoAtivos.length === 0) {
+    html += '<div style="font-size: 12px; color: #94a3b8; text-align: center; padding: 8px 0;">Tudo em dia. Sem pendências prioritárias.</div>';
+  }
   html += '</div>';
 
-  // BLOCO 3 — Pontos do mês
-  html += '<div style="background: #f8fafc; padding: 16px; border-top: 1px solid #e2e8f0; border-radius: 0 0 12px 12px;">';
-  html += '<h2 style="font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin: 0 0 8px;">Seus pontos em ' + mesAtual + '</h2>';
-  html += '<table style="width: 100%; font-size: 12px; margin-bottom: 8px;">';
-  html += '<tr><td style="color: #64748b;">Pontos totais:</td><td style="text-align: right; font-weight: 800; font-size: 18px; color: #0f172a;">' + ptsTotal + ' pts</td></tr>';
-  html += '<tr><td style="color: #64748b;">Conta:</td><td style="text-align: right; font-weight: 700; color: #2563eb;">' + ptsConta + ' pts</td></tr>';
-  html += '<tr><td style="color: #64748b;">GetNet:</td><td style="text-align: right; font-weight: 700; color: #7c3aed;">' + ptsGetnet + ' pts</td></tr>';
-  if (ptsFit > 0) html += '<tr><td style="color: #64748b;">Fit:</td><td style="text-align: right; font-weight: 700; color: #059669;">' + ptsFit + ' pts</td></tr>';
+  // Pontos do mês
+  html += '<div style="background: #f8fafc; padding: 16px; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">';
+  html += '<h2 style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin: 0 0 10px;">Seus pontos em ' + mesAtual + '</h2>';
+  html += '<table style="width: 100%; font-size: 12px; border-collapse: collapse; margin-bottom: 8px;">';
+  html += '<tr><td style="color: #64748b; padding: 3px 0;">Pontos totais:</td><td style="text-align: right; font-weight: 800; font-size: 18px;">' + ptsTotal + ' pts</td></tr>';
+  html += '<tr><td style="color: #64748b; padding: 3px 0;">Conta:</td><td style="text-align: right; font-weight: 700; color: #2563eb;">' + ptsConta + ' pts</td></tr>';
+  html += '<tr><td style="color: #64748b; padding: 3px 0;">Getnet:</td><td style="text-align: right; font-weight: 700; color: #7c3aed;">' + ptsGetnet + ' pts</td></tr>';
+  if (ptsFit > 0) html += '<tr><td style="color: #64748b; padding: 3px 0;">Fit:</td><td style="text-align: right; font-weight: 700; color: #059669;">' + ptsFit + ' pts</td></tr>';
   html += '</table>';
+
   html += '<div style="border-top: 1px solid #e2e8f0; padding-top: 8px; font-size: 12px;">';
-  html += '<div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: #64748b;">Valor base (pts × R$30):</span><strong>R$ ' + valorBase.toFixed(2).replace('.', ',') + '</strong></div>';
-  if (bonusConta > 0) html += '<div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: #64748b;">Bônus conta:</span><strong style="color: #059669;">R$ ' + bonusConta.toLocaleString('pt-BR') + '</strong></div>';
-  if (bonusGetnet > 0) html += '<div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: #64748b;">Bônus GetNet:</span><strong style="color: #059669;">R$ ' + bonusGetnet.toLocaleString('pt-BR') + '</strong></div>';
-  html += '<div style="display: flex; justify-content: space-between; padding: 6px 0 0; border-top: 1px solid #e2e8f0; margin-top: 6px; font-size: 14px;"><span style="font-weight: 700;">Total projetado:</span><strong style="color: #059669;">R$ ' + totalMes.toFixed(2).replace('.', ',') + '</strong></div>';
+  html += '<div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: #64748b;">Valor base (pts × R$30):</span><strong>R$ ' + valorBase.toFixed(2).replace(".", ",") + '</strong></div>';
+  if (bonusConta > 0) html += '<div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: #64748b;">Bônus conta (faixa):</span><strong style="color: #059669;">R$ ' + bonusConta.toLocaleString("pt-BR") + '</strong></div>';
+  if (bonusGetnet > 0) html += '<div style="display: flex; justify-content: space-between; padding: 3px 0;"><span style="color: #64748b;">Bônus GetNet (faixa):</span><strong style="color: #059669;">R$ ' + bonusGetnet.toLocaleString("pt-BR") + '</strong></div>';
+  html += '<div style="display: flex; justify-content: space-between; padding: 8px 0 0; border-top: 1px solid #e2e8f0; margin-top: 6px; font-size: 14px;"><span style="font-weight: 700;">Total projetado:</span><strong style="color: #059669;">R$ ' + totalMes.toFixed(2).replace(".", ",") + '</strong></div>';
+  html += '</div>';
   html += '</div>';
 
-  if (proxConta) {
-    html += '<div style="margin-top: 10px; padding: 8px; background: #fef3c7; border-radius: 6px; font-size: 11px; color: #92400e;"><strong>Faltam ' + proxConta.faltam + ' pts</strong> para o próximo bônus de conta (R$ ' + proxConta.valor.toLocaleString('pt-BR') + ').</div>';
+  // Gap para próxima faixa
+  if (proxConta || proxGetnet) {
+    html += '<div style="background: #fff; padding: 16px; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">';
+    if (proxConta) {
+      html += '<div style="padding: 8px; background: #fef3c7; border-radius: 6px; font-size: 11px; color: #92400e; margin-bottom: 6px;"><strong>Faltam ' + proxConta.faltam + ' pts</strong> para o próximo bônus de conta (R$ ' + proxConta.valor.toLocaleString("pt-BR") + ').</div>';
+    }
+    if (proxGetnet) {
+      html += '<div style="padding: 8px; background: #ede9fe; border-radius: 6px; font-size: 11px; color: #5b21b6;"><strong>Faltam ' + proxGetnet.faltam + ' pts</strong> para o próximo bônus GetNet (R$ ' + proxGetnet.valor.toLocaleString("pt-BR") + ').</div>';
+    }
+    html += '</div>';
   }
-  if (proxGetnet) {
-    html += '<div style="margin-top: 6px; padding: 8px; background: #ede9fe; border-radius: 6px; font-size: 11px; color: #5b21b6;"><strong>Faltam ' + proxGetnet.faltam + ' pts</strong> para o próximo bônus GetNet (R$ ' + proxGetnet.valor.toLocaleString('pt-BR') + ').</div>';
-  }
-  html += '</div>';
 
-  html += '<div style="text-align: center; padding: 16px; font-size: 10px; color: #94a3b8;">iCtx · Resumo gerado automaticamente às 8h</div>';
+  // Rodapé
+  html += '<div style="background: #f8fafc; text-align: center; padding: 12px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; font-size: 10px; color: #94a3b8;">iCtx · Resumo gerado automaticamente às 8h</div>';
   html += '</div>';
 
   MailApp.sendEmail({
     to: Session.getActiveUser().getEmail(),
-    subject: 'iCtx · Resumo ' + Utilities.formatDate(agora, Session.getScriptTimeZone(), "dd/MM"),
+    subject: "iCtx · Resumo " + Utilities.formatDate(agora, Session.getScriptTimeZone(), "dd/MM"),
     htmlBody: html,
   });
-}`;
+};`;
 

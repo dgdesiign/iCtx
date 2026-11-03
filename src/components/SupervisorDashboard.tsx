@@ -375,6 +375,7 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
     <div className="fixed inset-0 z-50 bg-white flex flex-col animate-in fade-in duration-150">
       {/* Sticky Header */}
       <header className="sticky top-0 z-20 h-14 bg-white border-b border-slate-200 px-4 lg:px-6 flex items-center justify-between shrink-0 shadow-2xs">
+        {/* Esquerda: BarChart3 + Painel do Supervisor + badge Single-user */}
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center shadow-xs text-white shrink-0">
             <BarChart3 className="w-4 h-4" />
@@ -389,26 +390,29 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-slate-500 hidden sm:block shrink-0" />
-            <select
-              value={executivoSelecionado}
-              onChange={(e) => setExecutivoSelecionado(e.target.value)}
-              className="text-xs bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-500 shadow-2xs"
-            >
-              <option value="todos">
-                👥 Equipe Completa ({totalGeralLeads} leads · {totalGeralFechados} fechados)
+        {/* Centro: filtro <select> Visão da Equipe */}
+        <div className="flex items-center gap-2">
+          <Users className="w-4 h-4 text-slate-500 hidden sm:block shrink-0" />
+          <select
+            value={executivoSelecionado}
+            onChange={(e) => setExecutivoSelecionado(e.target.value)}
+            className="text-xs bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-500 shadow-2xs"
+            aria-label="Visão da Equipe"
+          >
+            <option value="todos">
+              👥 Equipe Completa ({totalGeralLeads} leads · {totalGeralFechados} fechados)
+            </option>
+            {leadsEquipe.map((m) => (
+              <option key={m.email} value={m.email}>
+                👤 {m.nome} ({m.payload.leads.length} leads ·{' '}
+                {m.payload.leads.filter((l) => l.status === 'fechado').length} fechados)
               </option>
-              {leadsEquipe.map((m) => (
-                <option key={m.email} value={m.email}>
-                  👤 {m.nome} ({m.payload.leads.length} leads ·{' '}
-                  {m.payload.leads.filter((l) => l.status === 'fechado').length} fechados)
-                </option>
-              ))}
-            </select>
-          </div>
+            ))}
+          </select>
+        </div>
 
+        {/* Direita: botão X (fecha) e alternador de perfil */}
+        <div className="flex items-center gap-2.5 shrink-0">
           {onAlternarRole && (
             <button
               type="button"
@@ -455,7 +459,7 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
           </div>
 
           {/* Hero KPIs (5 cards) */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-4">
               <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
                 Total de Pontos
@@ -1193,7 +1197,7 @@ export const SupervisorDashboard: React.FC<SupervisorDashboardProps> = ({
       {/* Sticky Footer */}
       <footer className="sticky bottom-0 z-20 h-12 bg-white border-t border-slate-200 px-4 lg:px-6 flex items-center justify-between shrink-0 shadow-xs">
         <p className="text-xs text-slate-500">
-          Painel do Supervisor · Métricas baseadas em registros auditáveis do CRM
+          Métricas baseadas em registros auditáveis do CRM
         </p>
         <button
           type="button"

@@ -21,15 +21,22 @@ import {
   CreditCard,
   TrendingUp,
   QrCode,
+  Copy,
+  XCircle,
+  Send,
+  RefreshCw,
+  ArrowLeft,
+  ShieldAlert,
 } from 'lucide-react';
 import { Lead, LeadStatus } from '../types/crm';
 import { CredenciamentoWizardModal } from './CredenciamentoWizardModal';
-import { KANBAN_COLUMNS } from '../utils/storage';
+import { COLUNAS_KANBAN } from './PipelineKanban';
 import { formatarNome, formatarTelefone, limparDigitos, consultarCnpj } from '../services/cnpjService';
 import { obterInfoFollowUp, diasDesdeUltimoContato } from '../utils/cadencia';
 import { obterInfoScore } from '../utils/scoring';
 import { 
   definirPix, 
+  definirMaquinaVendas,
   registrarVendaMaquina, 
   calcularAtivacaoStatus, 
   ativacaoCompleta,
@@ -44,28 +51,239 @@ import {
   dataLocalISO
 } from '../utils/ativacao';
 
+// Templates Sniper para Grid de Tiles (1 Clique)
+interface TemplateSniper {
+  id: string;
+  titulo: string;
+  subtitulo: string;
+  tag: string;
+  corEstilo: string;
+  corIconeBg: string;
+  corIcone: string;
+  icone: 'MessageCircle' | 'RefreshCw' | 'CreditCard' | 'CheckCircle2' | 'Building2' | 'MapPin';
+  texto: string;
+}
+
+const TEMPLATES_SNIPER: TemplateSniper[] = [
+  {
+    id: 'visao_geral',
+    titulo: 'Visão Geral',
+    subtitulo: '1º contato & Pronampe',
+    tag: '1º Contato',
+    corEstilo: 'bg-emerald-50/70 hover:bg-emerald-100/80 border-emerald-200 text-emerald-950',
+    corIconeBg: 'bg-emerald-100 text-emerald-700',
+    corIcone: 'text-emerald-700',
+    icone: 'MessageCircle',
+    texto: `Oi {nome}, tudo joia? Vi aqui que você responde pela *{empresa}*, certo?\n\nSou o Douglas Krüger, represento o Banco Santander aqui na região em soluções e abertura de contas PJ. Tô te chamando rapidinho porque acompanho empresas com o perfil da {empresa} para avaliar a viabilidade de condições diferenciadas, como taxas competitivas e linhas de Pronampe. Vale a pena eu dar uma olhada rápida na viabilidade para a {empresa}?`,
+  },
+  {
+    id: 'recuperacao',
+    titulo: 'Recuperação',
+    subtitulo: 'Retomada de contato',
+    tag: 'Recontato',
+    corEstilo: 'bg-amber-50/70 hover:bg-amber-100/80 border-amber-200 text-amber-950',
+    corIconeBg: 'bg-amber-100 text-amber-700',
+    corIcone: 'text-amber-700',
+    icone: 'RefreshCw',
+    texto: `Oi {nome}, tudo bem?\n\nTentei falar com você anteriormente sobre as condições do Santander para a *{empresa}*. Conseguiu dar uma olhada na proposta ou prefere que eu te ligue em 1 minutinho para alinharmos?`,
+  },
+  {
+    id: 'oferta_maquina',
+    titulo: 'Máquina & Taxas',
+    subtitulo: 'GetNet & Fit Energia',
+    tag: 'GetNet',
+    corEstilo: 'bg-blue-50/70 hover:bg-blue-100/80 border-blue-200 text-blue-950',
+    corIconeBg: 'bg-blue-100 text-blue-700',
+    corIcone: 'text-blue-700',
+    icone: 'CreditCard',
+    texto: `Oi {nome}, tudo bem? Sou o Douglas Krüger do Santander.\n\nMuitos empresários do setor da *{empresa}* estão buscando alternativas para reduzir os custos com taxas de maquininhas e cobranças à distância. Temos uma condição especial para a máquina GetNet / Fit Energia. Posso te enviar as taxas agora?`,
+  },
+  {
+    id: 'fechamento',
+    titulo: 'Fechamento PIX',
+    subtitulo: 'Ativação & chave PIX',
+    tag: 'Etapa Final',
+    corEstilo: 'bg-purple-50/70 hover:bg-purple-100/80 border-purple-200 text-purple-950',
+    corIconeBg: 'bg-purple-100 text-purple-700',
+    corIcone: 'text-purple-700',
+    icone: 'CheckCircle2',
+    texto: `Perfeito {nome}! Vamos avançar com o credenciamento e ativação da conta da *{empresa}*.\n\nO processo é 100% digital e rápido. Me confirma apenas se o CNPJ continua 100% regular para darmos o start?`,
+  },
+  {
+    id: 'tarifa_zero',
+    titulo: 'Conta Isenta',
+    subtitulo: 'Isenção tarifas PJ',
+    tag: 'Tarifa Zero',
+    corEstilo: 'bg-teal-50/70 hover:bg-teal-100/80 border-teal-200 text-teal-950',
+    corIconeBg: 'bg-teal-100 text-teal-700',
+    corIcone: 'text-teal-700',
+    icone: 'Building2',
+    texto: `Olá {nome}, tudo bem? Parabéns pelo trabalho na *{empresa}*!\n\nSou o Douglas Krüger, especialista em abertura de contas PJ para o Santander. Auxilio empresas com o perfil da {empresa} a estruturarem sua operação financeira com isenção de tarifas e condições diferenciadas. Consegue falar 1 minutinho?`,
+  },
+  {
+    id: 'regional',
+    titulo: 'Proximidade',
+    subtitulo: 'Consultor Santander local',
+    tag: 'Regional',
+    corEstilo: 'bg-rose-50/70 hover:bg-rose-100/80 border-rose-200 text-rose-950',
+    corIconeBg: 'bg-rose-100 text-rose-700',
+    corIcone: 'text-rose-700',
+    icone: 'MapPin',
+    texto: `Oi {nome}, tudo bem? Sou o Douglas Krüger, consultor do Santander aqui na nossa região de {cidade}.\n\nPrecisava falar rapidamente com o responsável pela *{empresa}* sobre um pacote especial com isenção e linhas para o CNPJ de vocês. Você prefere que eu te ligue em 1 minutinho ou conversamos por aqui?`,
+  },
+];
+
+// Roteiros de Ligação em Blocos (Tiles + Teleprompter)
+interface RoteiroLigacaoTile {
+  id: string;
+  titulo: string;
+  subtitulo: string;
+  tag: string;
+  corEstilo: string;
+  corIconeBg: string;
+  icone: 'PhoneCall' | 'ShieldAlert' | 'CreditCard' | 'CheckCircle2';
+  etapas: {
+    fase: string;
+    fala: string;
+    dica?: string;
+  }[];
+}
+
+const ROTEIROS_LIGACAO: RoteiroLigacaoTile[] = [
+  {
+    id: 'abordagem_inicial',
+    titulo: 'Roteiro: Abordagem Inicial',
+    subtitulo: 'Apresentação & qualificação rápida',
+    tag: '1º Contato',
+    corEstilo: 'bg-blue-50/70 hover:bg-blue-100/80 border-blue-200 text-blue-950',
+    corIconeBg: 'bg-blue-100 text-blue-700',
+    icone: 'PhoneCall',
+    etapas: [
+      {
+        fase: 'OBJETIVO DA LIGAÇÃO',
+        fala: 'Conexão imediata e qualificação rápida sem parecer telemarketing.',
+      },
+      {
+        fase: 'QUEBRA-GELO',
+        fala: 'Olá {nome}, tudo bem? Aqui é Douglas Krüger do Santander Empresas. Vi que a {empresa} atua forte aqui na região de {cidade}.',
+        dica: 'Fale com energia firme e natural, sem pausas de dúvida.',
+      },
+      {
+        fase: 'O GATILHO (Dor / Oportunidade)',
+        fala: 'Estou te ligando rápido porque mapeamos o segmento da {empresa} e liberamos condições diferenciadas com isenção de tarifa na conta PJ e taxas especiais de Pronampe. Hoje você paga alguma taxa mensal de manutenção no seu banco atual?',
+        dica: 'Aguarde o lead responder. A maioria reclama de taxas altas ou gerente ausente.',
+      },
+      {
+        fase: 'FECHAMENTO PARA PRÓXIMO PASSO',
+        fala: 'Consigo garantir essa isenção completa e crédito pré-aprovado. Posso te mandar o comparativo oficial direto no seu WhatsApp agora para você olhar sem compromisso?',
+      },
+    ],
+  },
+  {
+    id: 'quebra_objecao',
+    titulo: 'Roteiro: Quebra de Objeção',
+    subtitulo: '"Já tenho banco" / "Sem tempo"',
+    tag: 'Contorno',
+    corEstilo: 'bg-amber-50/70 hover:bg-amber-100/80 border-amber-200 text-amber-950',
+    corIconeBg: 'bg-amber-100 text-amber-700',
+    icone: 'ShieldAlert',
+    etapas: [
+      {
+        fase: 'OBJETIVO DA LIGAÇÃO',
+        fala: 'Contornar a resistência inicial com foco em conta de contingência sem custos e taxas menores.',
+      },
+      {
+        fase: 'SE O LEAD DISSER "JÁ TENHO BANCO"',
+        fala: 'Perfeito {nome}, a maioria dos nossos parceiros já tinham relacionamento em outros bancos. Nossa intenção não é substituir seu banco principal agora, mas sim garantir que a {empresa} tenha uma segunda conta PJ blindada sem custo fixo e com linhas de crédito abertas.',
+      },
+      {
+        fase: 'SE O LEAD DISSER "NÃO TENHO TEMPO"',
+        fala: 'Compreendo perfeitamente, tempo de empresário é ouro! Por isso o credenciamento é 100% digital pelo celular e leva menos de 5 minutos, sem pisar em agência.',
+      },
+      {
+        fase: 'FECHAMENTO RÁPIDO',
+        fala: 'Vou fazer o seguinte: só me confirma se o CNPJ continua 100% regular que eu deixo a proposta pronta no WhatsApp para você ver quando tiver 1 minuto. Pode ser?',
+      },
+    ],
+  },
+  {
+    id: 'oferta_maquina',
+    titulo: 'Roteiro: Máquina & Taxas',
+    subtitulo: 'Redução de custos GetNet',
+    tag: 'GetNet',
+    corEstilo: 'bg-emerald-50/70 hover:bg-emerald-100/80 border-emerald-200 text-emerald-950',
+    corIconeBg: 'bg-emerald-100 text-emerald-700',
+    icone: 'CreditCard',
+    etapas: [
+      {
+        fase: 'OBJETIVO DA LIGAÇÃO',
+        fala: 'Identificar custos de maquininha atual e apresentar economia comprovada.',
+      },
+      {
+        fase: 'ABORDAGEM DIRETA',
+        fala: 'Oi {nome}, tudo joia? Douglas do Santander. Liguei rápido porque liberamos uma campanha direta para reduzir as taxas de maquininha de empresas em {cidade}.',
+      },
+      {
+        fase: 'PERGUNTA QUALIFICADORA',
+        fala: 'Qual máquina você usa hoje na {empresa}? Está pagando taxa de aluguel ou mais de 1,5% no débito/crédito?',
+      },
+      {
+        fase: 'PROPOSTA E FECHAMENTO',
+        fala: 'Temos a máquina GetNet com isenção de aluguel por faturamento e taxas agressivas. Me fala qual o volume aproximado no cartão por mês que eu já gero a tabela de economia no seu WhatsApp.',
+      },
+    ],
+  },
+  {
+    id: 'ativacao_fechamento',
+    titulo: 'Roteiro: Ativação & PIX',
+    subtitulo: 'Ativação e validação de conta',
+    tag: 'Fechamento',
+    corEstilo: 'bg-purple-50/70 hover:bg-purple-100/80 border-purple-200 text-purple-950',
+    corIconeBg: 'bg-purple-100 text-purple-700',
+    icone: 'CheckCircle2',
+    etapas: [
+      {
+        fase: 'OBJETIVO DA LIGAÇÃO',
+        fala: 'Acompanhar a finalização da emissão da conta e cadastramento da primeira chave PIX.',
+      },
+      {
+        fase: 'PARABENIZAR',
+        fala: 'Olá {nome}, tudo bem? Douglas aqui. Vi que a proposta da {empresa} foi concluída e a conta Santander Empresas já está habilitada.',
+      },
+      {
+        fase: 'PASSO DE ATIVAÇÃO',
+        fala: 'Para validar o pacote com as isenções que combinamos, só precisamos fazer o primeiro login no aplicativo e registrar a sua chave PIX CNPJ.',
+      },
+      {
+        fase: 'CHAMADA PARA AÇÃO',
+        fala: 'Você consegue abrir o app agora para validarmos juntos em 2 minutos?',
+      },
+    ],
+  },
+];
+
 interface LeadDetailDrawerProps {
   lead: Lead | null;
   isOpen: boolean;
   onClose: () => void;
-  onUpdateStatus: (leadId: string, status: LeadStatus) => void;
+  onUpdateStatus?: (leadId: string, status: LeadStatus) => void;
   onUpdateLead?: (lead: Lead) => void;
-  onSaveNotas: (leadId: string, notas: string) => void;
-  onOpenMessageComposer: (lead: Lead) => void;
-  onOpenCallScript: (lead: Lead) => void;
-  onOpenCoach: (lead: Lead) => void;
+  onSaveNotas?: (leadId: string, notas: string) => void;
+  onOpenMessageComposer?: (lead: Lead) => void;
+  onOpenCallScript?: (lead: Lead) => void;
+  onOpenCoach?: (lead: Lead) => void;
 }
 
 export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
   lead,
   isOpen,
   onClose,
-  onUpdateStatus,
+  onUpdateStatus = () => {},
   onUpdateLead,
-  onSaveNotas,
-  onOpenMessageComposer,
-  onOpenCallScript,
-  onOpenCoach,
+  onSaveNotas = () => {},
+  onOpenMessageComposer = () => {},
+  onOpenCallScript = () => {},
+  onOpenCoach = () => {},
 }) => {
   const [notas, setNotas] = useState(lead?.notas || '');
   const [salvo, setSalvo] = useState(false);
@@ -75,6 +293,16 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
   const [editEmpresa, setEditEmpresa] = useState(lead?.empresaExibicao || '');
   const [wizardAberto, setWizardAberto] = useState(false);
 
+  // Estados para Verificação Parceiro Santander (Sprint R8)
+  const [bloqueioAtivo, setBloqueioAtivo] = useState(false);
+  const [motivoBloqueio, setMotivoBloqueio] = useState('Já indicado por outro parceiro');
+  const [motivoOutro, setMotivoOutro] = useState('');
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  // Abas de Gestão de Contato Rápido (WhatsApp / Ligação / Dossiê)
+  const [tabAtiva, setTabAtiva] = useState<'whatsapp' | 'ligacao' | 'dossie'>('whatsapp');
+  const [roteiroSelecionadoId, setRoteiroSelecionadoId] = useState<string | null>(null);
+
   useEffect(() => {
     if (lead) {
       setNotas(lead.notas || '');
@@ -82,6 +310,10 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
       setEditTelefone(lead.telefonePrincipal || '');
       setEditEmpresa(lead.empresaExibicao || '');
       setEditando(false);
+      setBloqueioAtivo(false);
+      setMotivoBloqueio('Já indicado por outro parceiro');
+      setMotivoOutro('');
+      setRoteiroSelecionadoId(null);
     }
   }, [lead?.id]);
 
@@ -132,29 +364,102 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
     setTimeout(() => setSalvo(false), 2000);
   };
 
+  const handleCopy = (text: string, label: string) => {
+    if (!text) {
+      setToastMsg(`Nenhum dado de ${label} para copiar`);
+      setTimeout(() => setToastMsg(null), 2500);
+      return;
+    }
+    navigator.clipboard.writeText(text).then(
+      () => {
+        setToastMsg(`${label} copiado!`);
+        setTimeout(() => setToastMsg(null), 2500);
+      },
+      () => {
+        try {
+          const textarea = document.createElement('textarea');
+          textarea.value = text;
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+          setToastMsg(`${label} copiado!`);
+          setTimeout(() => setToastMsg(null), 2500);
+        } catch {
+          setToastMsg(`Erro ao copiar ${label}`);
+          setTimeout(() => setToastMsg(null), 2500);
+        }
+      }
+    );
+  };
+
+  const cnpjValor = lead.cnpj || lead.cnpjFormatado?.replace(/\D/g, '') || '';
+  const nomeValor = lead.nome || lead.nomeContato || lead.empresaExibicao || '';
+  const razaoValor = lead.razaoSocial || lead.empresaExibicao || '';
+  const telefoneValor = lead.telefone || lead.telefonePrincipalFormatado || lead.telefonePrincipal || '';
+  const enderecoCompletoValor = [
+    lead.logradouro && lead.numero ? `${lead.logradouro}, ${lead.numero}` : lead.logradouro || lead.numero,
+    lead.bairro,
+    lead.municipio || lead.cidade,
+    lead.uf,
+  ]
+    .filter(Boolean)
+    .join(', ');
+  const blocoTudoValor = [cnpjValor, nomeValor, razaoValor, telefoneValor, enderecoCompletoValor].join('\n');
+
   const scoreInfo = obterInfoScore(lead);
+
+  const interpolar = (txt: string) => {
+    const nomeRaw = (lead.nomeContato || (lead as any).nome || 'Cliente').trim();
+    const primeiroNome = nomeRaw.split(/\s+/)[0] || 'Cliente';
+    const empresa = lead.empresaExibicao || (lead as any).empresa || 'Sua empresa';
+    const cidade = lead.municipio || (lead as any).cidade || 'sua região';
+    const idade = lead.idadeEmpresa || 'algum tempo';
+
+    return txt
+      .replace(/{nome}/g, primeiroNome)
+      .replace(/{empresa}/g, empresa)
+      .replace(/{cidade}/g, cidade)
+      .replace(/{idade}/g, idade)
+      .replace(/\[Seu Nome\]/g, 'Douglas Krüger');
+  };
+
+  const roteiroSelecionado = ROTEIROS_LIGACAO.find((r) => r.id === roteiroSelecionadoId);
+
+  const telLimpo = (
+    lead.telefonePrincipal ||
+    lead.telefonePrincipalFormatado ||
+    (lead as any).telefone ||
+    ''
+  ).replace(/\D/g, '');
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="bg-white w-full max-w-xl h-full shadow-2xl border-l border-slate-200 flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
-        
-        {/* Drawer Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50 flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-red-100 text-red-800 shrink-0">
-                Dossiê da Empresa
+      <div className="bg-white w-full md:w-[600px] max-w-2xl h-[100dvh] max-h-[100dvh] shadow-2xl border-l border-slate-200 flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 relative">
+        {toastMsg && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-60 bg-slate-900/95 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-xl border border-slate-700 flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-150">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{toastMsg}</span>
+          </div>
+        )}
+
+        {/* HEADER DA GAVETA */}
+        <div className="px-5 py-4 border-b flex justify-between items-center bg-slate-50 flex-shrink-0">
+          <div className="min-w-0 flex-1 pr-3">
+            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-100 text-blue-800">
+                Gestão de Contato
               </span>
               {scoreInfo && (
-                <span className={`text-[10px] sm:text-[11px] px-2 py-0.5 rounded border shrink-0 ${scoreInfo.badgeStyle}`}>
-                  Score {scoreInfo.score}/100 ({scoreInfo.rotulo})
+                <span className={`text-[10px] px-2 py-0.5 rounded border shrink-0 ${scoreInfo.badgeStyle}`}>
+                  Score {scoreInfo.score}/100
                 </span>
               )}
               <span className="text-xs text-slate-500 font-mono truncate">{lead.cnpjFormatado}</span>
             </div>
-            <h3 className="font-bold text-base sm:text-lg text-slate-900 leading-snug truncate">
-              {lead.empresaExibicao}
-            </h3>
+            <h2 className="text-lg sm:text-xl font-bold text-slate-800 truncate">
+              {lead.empresaExibicao || (lead as any).empresa || lead.nomeContato || (lead as any).nome}
+            </h2>
             {lead.razaoSocial && lead.razaoSocial !== lead.empresaExibicao && (
               <p className="text-xs text-slate-500 mt-0.5 truncate">
                 Razão Social: {lead.razaoSocial}
@@ -163,68 +468,693 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-200/60 transition-colors shrink-0 cursor-pointer"
-            title="Fechar Dossiê"
+            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-full transition-colors cursor-pointer shrink-0"
+            title="Fechar Gaveta"
             aria-label="Fechar"
           >
-            <X className="w-5 h-5" />
+            <X size={24} />
           </button>
         </div>
 
-        {/* Quick Stage and Direct Actions Bar */}
-        <div className="px-4 sm:px-5 py-2.5 sm:py-3 bg-white border-b border-slate-200 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+        {/* Quick Stage & Coach Bar */}
+        <div className="px-5 py-2 bg-white border-b border-slate-200 flex items-center justify-between gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
             <span className="text-xs text-slate-500 font-medium shrink-0">Etapa:</span>
             <select
               value={lead.status}
-              onChange={(e) => onUpdateStatus(lead.id, e.target.value as LeadStatus)}
-              className="text-xs font-bold border border-slate-300 rounded-lg px-2 sm:px-2.5 py-1.5 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-red-600 truncate max-w-[150px] sm:max-w-[200px]"
+              onChange={(e) => onUpdateStatus?.(lead.id, e.target.value as LeadStatus)}
+              className="text-xs font-bold border border-slate-300 rounded-lg px-2.5 py-1 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-red-600 truncate max-w-[170px]"
             >
-              {KANBAN_COLUMNS.map((col) => (
+              {COLUNAS_KANBAN.map((col) => (
                 <option key={col.id} value={col.id}>
                   {col.titulo}
                 </option>
               ))}
             </select>
           </div>
-
-          {/* Direct Action Buttons - Apenas Ícones conforme solicitado */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* AI Coach Local (Sprint 4) */}
+          {onOpenCoach && (
             <button
               onClick={() => onOpenCoach(lead)}
-              className="w-9 h-9 flex items-center justify-center text-amber-700 bg-amber-50 hover:bg-amber-600 hover:text-white border border-amber-200 rounded-xl transition-colors cursor-pointer shadow-2xs"
-              title="AI Coach da Negociação"
-              aria-label="Coach"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors cursor-pointer"
+              title="Abrir AI Coach da Negociação"
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>AI Coach</span>
             </button>
-
-            {/* Ligação Telefônica */}
-            <button
-              onClick={() => onOpenCallScript(lead)}
-              className="w-9 h-9 flex items-center justify-center text-purple-700 bg-purple-50 hover:bg-purple-600 hover:text-white border border-purple-200 rounded-xl transition-colors cursor-pointer shadow-2xs"
-              title="Abrir Roteiro de Ligação Telefônica"
-              aria-label="Ligação"
-            >
-              <PhoneCall className="w-4 h-4" />
-            </button>
-
-            {/* Disparar WhatsApp */}
-            <button
-              onClick={() => onOpenMessageComposer(lead)}
-              className="w-9 h-9 flex items-center justify-center text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors shadow-2xs cursor-pointer"
-              title="Disparar Mensagem pelo WhatsApp"
-              aria-label="Disparar WhatsApp"
-            >
-              <MessageCircle className="w-4 h-4" />
-            </button>
-          </div>
+          )}
         </div>
 
-        {/* Drawer Body */}
-        <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5 text-xs text-slate-700">
-          
+        {/* ABAS (1 Clique para decidir a ação) */}
+        <div className="flex border-b bg-white flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => setTabAtiva('whatsapp')}
+            className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 sm:gap-2 border-b-2 transition-colors cursor-pointer ${
+              tabAtiva === 'whatsapp'
+                ? 'border-green-500 text-green-600 bg-green-50/50'
+                : 'border-transparent text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            <MessageCircle size={16} />
+            <span>WhatsApp Rápido</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTabAtiva('ligacao')}
+            className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 sm:gap-2 border-b-2 transition-colors cursor-pointer ${
+              tabAtiva === 'ligacao'
+                ? 'border-blue-500 text-blue-600 bg-blue-50/50'
+                : 'border-transparent text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            <Phone size={16} />
+            <span>Roteiro de Ligação</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTabAtiva('dossie')}
+            className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 sm:gap-2 border-b-2 transition-colors cursor-pointer ${
+              tabAtiva === 'dossie'
+                ? 'border-slate-800 text-slate-900 bg-slate-50'
+                : 'border-transparent text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            <Building2 size={16} />
+            <span>Dossiê da Empresa</span>
+          </button>
+        </div>
+
+        {/* ÁREA DE CONTEÚDO */}
+        <div className="p-4 sm:p-5 overflow-y-auto flex-1 bg-slate-50 text-xs text-slate-700">
+          {/* ABA 1: DISPARO SNIPER WHATSAPP (1 CLIQUE) */}
+          {tabAtiva === 'whatsapp' && (
+            <div className="flex flex-col h-full animate-in fade-in duration-200">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <MessageCircle size={15} className="text-emerald-600" />
+                    Gatilhos Sniper (1 Clique)
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Clique no bloco desejado para abrir diretamente no WhatsApp com os dados do lead preenchidos.
+                  </p>
+                </div>
+                {telLimpo.length < 10 && (
+                  <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded font-semibold">
+                    Sem WhatsApp válido
+                  </span>
+                )}
+              </div>
+
+              {/* LISTA VERTICAL COMPACTA SLIM UI (SEM SUBTÍTULOS) */}
+              <div className="flex flex-col gap-1.5">
+                {TEMPLATES_SNIPER.map((tpl) => {
+                  const textoCustomizado = interpolar(tpl.texto);
+                  const waUrl =
+                    telLimpo.length >= 10
+                      ? `https://wa.me/55${telLimpo}?text=${encodeURIComponent(textoCustomizado)}`
+                      : '#';
+
+                  return (
+                    <a
+                      key={tpl.id}
+                      href={waUrl}
+                      target={telLimpo.length >= 10 ? '_blank' : undefined}
+                      rel={telLimpo.length >= 10 ? 'noopener noreferrer' : undefined}
+                      onClick={(e) => {
+                        if (telLimpo.length < 10) {
+                          e.preventDefault();
+                          setToastMsg('Lead sem número de WhatsApp válido.');
+                          setTimeout(() => setToastMsg(null), 2500);
+                          return;
+                        }
+                        if (onUpdateStatus) {
+                          onUpdateStatus(lead.id, lead.status === 'novo' ? 'em_prospeccao' : lead.status);
+                        }
+                        setToastMsg(`Disparando "${tpl.titulo}" no WhatsApp...`);
+                        setTimeout(() => setToastMsg(null), 2500);
+                      }}
+                      className="w-full flex items-center gap-3 p-2.5 bg-white hover:bg-slate-50 border border-slate-200 rounded text-slate-700 text-sm transition-colors text-left group cursor-pointer"
+                      title={`Enviar "${tpl.titulo}" via WhatsApp`}
+                    >
+                      <div className="text-slate-500 group-hover:text-emerald-600 transition-colors shrink-0">
+                        {tpl.icone === 'MessageCircle' && <MessageCircle size={16} />}
+                        {tpl.icone === 'RefreshCw' && <RefreshCw size={16} />}
+                        {tpl.icone === 'CreditCard' && <CreditCard size={16} />}
+                        {tpl.icone === 'CheckCircle2' && <CheckCircle2 size={16} />}
+                        {tpl.icone === 'Building2' && <Building2 size={16} />}
+                        {tpl.icone === 'MapPin' && <MapPin size={16} />}
+                      </div>
+                      <span className="font-medium text-slate-800 flex-1 truncate">
+                        {tpl.titulo}
+                      </span>
+                    </a>
+                  );
+                })}
+              </div>
+
+              {/* DICA / RODAPÉ */}
+              <div className="mt-4 p-3 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                  Variáveis como <strong>{lead.nomeContato?.split(' ')[0] || 'Nome'}</strong> e <strong>{lead.empresaExibicao || 'Empresa'}</strong> são inseridas automaticamente.
+                </span>
+                <span className="font-mono text-slate-600 font-semibold">
+                  {telLimpo ? `+55 ${telLimpo}` : 'Telefone não cadastrado'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* ABA 2: ROTEIRO DE LIGAÇÃO (GRID DE BLOCOS + TELEPROMPTER) */}
+          {tabAtiva === 'ligacao' && (
+            <div className="h-full flex flex-col animate-in fade-in duration-200">
+              {/* Header de Discagem */}
+              <div className="bg-blue-600 text-white p-3.5 sm:p-4 rounded-xl flex justify-between items-center shadow-xs mb-3.5 shrink-0">
+                <div>
+                  <h3 className="font-bold text-sm sm:text-base">
+                    Ligando para {lead.nomeContato || (lead as any).nome || 'Cliente'}
+                  </h3>
+                  <p className="text-blue-100 text-xs font-mono">{telefoneValor || 'Sem telefone'}</p>
+                </div>
+                {telLimpo.length >= 10 ? (
+                  <a
+                    href={`tel:${telLimpo}`}
+                    onClick={() => {
+                      if (onUpdateStatus) {
+                        onUpdateStatus(lead.id, lead.status === 'novo' ? 'em_prospeccao' : lead.status);
+                      }
+                      setToastMsg('Iniciando chamada...');
+                      setTimeout(() => setToastMsg(null), 2500);
+                    }}
+                    className="px-3.5 py-2 bg-white text-blue-700 hover:bg-blue-50 font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                    title="Discar ligação agora"
+                  >
+                    <Phone size={15} className="text-blue-700 animate-pulse" />
+                    <span>Discar</span>
+                  </a>
+                ) : (
+                  <span className="text-[10px] bg-blue-700 text-blue-200 px-2 py-1 rounded font-medium">
+                    Sem número
+                  </span>
+                )}
+              </div>
+
+              {/* ESTADO 1: LISTA VERTICAL COMPACTA SLIM UI (SEM SUBTÍTULOS) */}
+              {!roteiroSelecionado ? (
+                <div className="flex-1 flex flex-col">
+                  <div className="mb-3.5 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                        <PhoneCall size={15} className="text-blue-600" />
+                        Roteiros de Ligação
+                      </h3>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Selecione um roteiro para abrir em formato Teleprompter durante a chamada.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* LISTA COMPACTA SLIM UI (SEM SUBTÍTULOS) */}
+                  <div className="flex flex-col gap-1.5">
+                    {ROTEIROS_LIGACAO.map((tpl) => (
+                      <button
+                        key={tpl.id}
+                        type="button"
+                        onClick={() => setRoteiroSelecionadoId(tpl.id)}
+                        className="w-full flex items-center gap-3 p-2.5 bg-white hover:bg-slate-50 border border-slate-200 rounded text-slate-700 text-sm transition-colors text-left group cursor-pointer"
+                        title={`Abrir "${tpl.titulo}"`}
+                      >
+                        <div className="text-slate-500 group-hover:text-blue-600 transition-colors shrink-0">
+                          {tpl.icone === 'PhoneCall' && <PhoneCall size={16} />}
+                          {tpl.icone === 'ShieldAlert' && <ShieldAlert size={16} />}
+                          {tpl.icone === 'CreditCard' && <CreditCard size={16} />}
+                          {tpl.icone === 'CheckCircle2' && <CheckCircle2 size={16} />}
+                        </div>
+                        <span className="font-medium text-slate-800 flex-1 truncate">
+                          {tpl.titulo}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* DICA DE APOIO */}
+                  <div className="mt-4 p-3 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 inline-block animate-pulse"></span>
+                      Roteiros estruturados para abertura, contorno de objeções, taxas GetNet e fechamento.
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                /* ESTADO 2: MODO TELEPROMPTER DE LIGAÇÃO */
+                <div className="flex-1 flex flex-col bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                  {/* Barra Superior do Teleprompter */}
+                  <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setRoteiroSelecionadoId(null)}
+                      className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 py-1 transition-colors cursor-pointer"
+                      title="Voltar aos roteiros de ligação"
+                    >
+                      <ArrowLeft size={13} />
+                      <span>Voltar</span>
+                    </button>
+
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 shrink-0">
+                        {roteiroSelecionado.tag}
+                      </span>
+                      <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">
+                        {roteiroSelecionado.titulo}
+                      </h4>
+                    </div>
+                  </div>
+
+                  {/* Conteúdo em Destaque (Teleprompter) */}
+                  <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4">
+                    {roteiroSelecionado.etapas.map((etapa, idx) => (
+                      <div key={idx} className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-blue-700">
+                            {etapa.fase}
+                          </span>
+                          {etapa.dica && (
+                            <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                              💡 {etapa.dica}
+                            </span>
+                          )}
+                        </div>
+                        <div className="p-3.5 sm:p-4 rounded-xl bg-blue-50/60 border-l-4 border-blue-500 text-slate-900 text-sm sm:text-base leading-relaxed font-medium">
+                          {interpolar(etapa.fala)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Rodapé do Teleprompter */}
+                  <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const textoCompleto = roteiroSelecionado.etapas
+                          .map((e) => `${e.fase}:\n${interpolar(e.fala)}`)
+                          .join('\n\n');
+                        handleCopy(textoCompleto, 'Roteiro de ligação');
+                      }}
+                      className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 font-semibold text-xs rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Copy size={14} />
+                      <span>Copiar Roteiro</span>
+                    </button>
+
+                    <span className="text-[11px] text-slate-500 font-medium">
+                      Teleprompter ativo para {lead.nomeContato?.split(' ')[0] || 'Cliente'}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ABA 3: DOSSIÊ COMPLETO */}
+          {tabAtiva === 'dossie' && (
+            <div className="space-y-5 animate-in fade-in duration-200">
+
+          {/* ========================================================================= */}
+          {/* BLOCO: GESTÃO DE CADÊNCIA (SPRINT H2.1)                                   */}
+          {/* ========================================================================= */}
+          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5 shadow-2xs">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-xs text-slate-900">
+                <span className="text-sm">💬</span>
+                <span>Gestão de Cadência</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] uppercase font-semibold text-slate-500">Tentativas:</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs font-extrabold border ${
+                    (lead.cadenciaContatos ?? 0) === 0
+                      ? 'bg-slate-100 text-slate-700 border-slate-200'
+                      : (lead.cadenciaContatos ?? 0) < 3
+                      ? 'bg-blue-100 text-blue-800 border-blue-200'
+                      : 'bg-rose-100 text-rose-800 border-rose-200'
+                  }`}
+                >
+                  {lead.cadenciaContatos ?? 0}/3
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-500">
+              Controle a cadência de prospecção do lead (até 3 tentativas estruturadas).
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              {/* Botão + Registrar Tentativa */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!onUpdateLead) return;
+                  const atual = (lead.cadenciaContatos ?? 0) as 0 | 1 | 2 | 3;
+                  const novaCadencia = Math.min(3, atual + 1) as 0 | 1 | 2 | 3;
+                  const novoStatus: LeadStatus = lead.status === 'novo' ? 'em_prospeccao' : lead.status;
+                  const atualizado: Lead = {
+                    ...lead,
+                    status: novoStatus,
+                    cadenciaContatos: novaCadencia,
+                    tentativasContato: (lead.tentativasContato || 0) + 1,
+                    dataUltimoContato: new Date().toISOString(),
+                    atualizadoEm: new Date().toISOString(),
+                  };
+                  onUpdateLead(atualizado);
+                  if (lead.status === 'novo') {
+                    onUpdateStatus(lead.id, 'em_prospeccao');
+                  }
+                  setToastMsg(`Tentativa ${novaCadencia}/3 registrada com sucesso!`);
+                  setTimeout(() => setToastMsg(null), 2500);
+                }}
+                disabled={(lead.cadenciaContatos ?? 0) >= 3}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs ${
+                  (lead.cadenciaContatos ?? 0) >= 3
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                }`}
+              >
+                <span>+ Registrar Tentativa</span>
+                <span className="text-[10px] opacity-80">
+                  ({(lead.cadenciaContatos ?? 0) < 3 ? `${(lead.cadenciaContatos ?? 0) + 1}ª vez` : '3/3 atingido'})
+                </span>
+              </button>
+
+              {/* Botão de alerta vermelho rápido se 3/3 */}
+              {(lead.cadenciaContatos ?? 0) >= 3 && lead.status !== 'descartado' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const atualizado: Lead = {
+                      ...lead,
+                      status: 'descartado',
+                      motivoDescarte: 'Cadência Esgotada (3/3 tentativas sem sucesso)',
+                      atualizadoEm: new Date().toISOString(),
+                    };
+                    if (onUpdateLead) {
+                      onUpdateLead(atualizado);
+                    }
+                    onUpdateStatus(lead.id, 'descartado');
+                    setToastMsg('Lead descartado (cadência esgotada).');
+                    setTimeout(() => setToastMsg(null), 2500);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs animate-pulse"
+                  title="Marcar lead como Descartado por cadência esgotada"
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                  <span>Esgotado: Descartar Lead?</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* ========================================================================= */}
+          {/* BLOCO A: VERIFICAÇÃO PARCEIRO SANTANDER (SOMENTE SE LEAD STATUS === NOVO) */}
+          {/* ========================================================================= */}
+          {lead.status === 'novo' && (
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5 shadow-2xs">
+              {lead.parceiroSantander?.status === 'apto' ? (
+                <div className="flex items-center justify-between p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800">
+                  <div className="flex items-center gap-2 font-bold text-xs">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>✓ Apto para indicação (Verificado)</span>
+                  </div>
+                  {lead.parceiroSantander.verificadoEm && (
+                    <span className="text-[10px] text-emerald-700">
+                      {new Date(lead.parceiroSantander.verificadoEm).toLocaleDateString('pt-BR')}
+                    </span>
+                  )}
+                </div>
+              ) : lead.parceiroSantander?.status === 'bloqueado' ? (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 flex items-center gap-2 font-bold text-xs">
+                  <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>✗ Bloqueado: {lead.parceiroSantander.motivoBloqueio || 'Indicação bloqueada'}</span>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-bold text-xs text-slate-900">
+                      <Building2 className="w-4 h-4 text-red-600 shrink-0" />
+                      <span>🏦 Verificação Parceiro Santander</span>
+                    </div>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                      Pendente
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-500">
+                    Consulte o CNPJ no Portal do Parceiro Santander antes de iniciar o primeiro contato.
+                  </p>
+
+                  <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                    {/* Botão 1: [Copiar CNPJ + Nome] */}
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(`${cnpjValor}\n${nomeValor}`, 'CNPJ + Nome')}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-300 hover:bg-white hover:border-slate-400 bg-white/70 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                      title="Copiar CNPJ e Nome em 2 linhas"
+                    >
+                      <Copy className="w-3.5 h-3.5 text-slate-500" />
+                      <span>[Copiar CNPJ + Nome]</span>
+                    </button>
+
+                    {/* Botão 2: ✓ Apto */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onUpdateLead) {
+                          onUpdateLead({
+                            ...lead,
+                            parceiroSantander: {
+                              status: 'apto',
+                              verificadoEm: new Date().toISOString(),
+                            },
+                            atualizadoEm: new Date().toISOString(),
+                          });
+                        }
+                        setToastMsg('✓ Apto para indicação (Verificado)');
+                        setTimeout(() => setToastMsg(null), 2500);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                      title="Marcar parceiro como apto para indicação"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>✓ Apto</span>
+                    </button>
+
+                    {/* Botão 3: ✗ Bloqueado */}
+                    <button
+                      type="button"
+                      onClick={() => setBloqueioAtivo(true)}
+                      className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Abrir opções de descarte por bloqueio no parceiro"
+                    >
+                      <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                      <span>✗ Bloqueado</span>
+                    </button>
+                  </div>
+
+                  {/* Div/Modal inline de Bloqueio */}
+                  {bloqueioAtivo && (
+                    <div className="mt-2.5 p-3 bg-white border border-rose-200 rounded-xl space-y-2.5 shadow-xs animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between border-b border-rose-100 pb-1.5">
+                        <span className="font-bold text-xs text-rose-900 flex items-center gap-1.5">
+                          <XCircle className="w-4 h-4 text-rose-600" />
+                          Motivo do Bloqueio no Parceiro
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setBloqueioAtivo(false)}
+                          className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[11px] font-semibold text-slate-700 block">
+                          Selecione o motivo:
+                        </label>
+                        <select
+                          value={motivoBloqueio}
+                          onChange={(e) => setMotivoBloqueio(e.target.value)}
+                          className="w-full text-xs border border-slate-300 rounded-lg p-2 bg-white text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-rose-500"
+                        >
+                          <option value="Já indicado por outro parceiro">Já indicado por outro parceiro</option>
+                          <option value="CNPJ inativo/baixado">CNPJ inativo/baixado</option>
+                          <option value="CNPJ com restrição">CNPJ com restrição</option>
+                          <option value="Sem telefone válido">Sem telefone válido</option>
+                          <option value="Outro">Outro</option>
+                        </select>
+
+                        {motivoBloqueio === 'Outro' && (
+                          <input
+                            type="text"
+                            placeholder="Descreva o motivo do bloqueio..."
+                            value={motivoOutro}
+                            onChange={(e) => setMotivoOutro(e.target.value)}
+                            className="w-full text-xs border border-slate-300 rounded-lg p-2 bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                          />
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
+                        <button
+                          type="button"
+                          onClick={() => setBloqueioAtivo(false)}
+                          className="px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const motivoFinal = motivoBloqueio === 'Outro' ? (motivoOutro.trim() || 'Outro') : motivoBloqueio;
+                            if (onUpdateLead) {
+                              onUpdateLead({
+                                ...lead,
+                                status: 'descartado',
+                                motivoDescarte: 'Parceiro Santander: ' + motivoFinal,
+                                parceiroSantander: {
+                                  status: 'bloqueado',
+                                  verificadoEm: new Date().toISOString(),
+                                  motivoBloqueio: motivoFinal,
+                                },
+                                atualizadoEm: new Date().toISOString(),
+                              });
+                            } else {
+                              onUpdateStatus(lead.id, 'descartado');
+                            }
+                            setBloqueioAtivo(false);
+                            setToastMsg('Lead bloqueado e movido para Descartado');
+                            setTimeout(() => setToastMsg(null), 2500);
+                          }}
+                          className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg shadow-2xs transition-colors cursor-pointer"
+                        >
+                          Confirmar Bloqueio
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* BLOCO B: FICHA CADASTRAL (PORTAL AK) — RENDERIZA EM QUALQUER STATUS        */}
+          {/* ========================================================================= */}
+          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5 shadow-2xs">
+            <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/70">
+              <div className="flex items-center gap-2 font-bold text-xs text-slate-900">
+                <span>📋 Ficha Cadastral (Portal AK)</span>
+              </div>
+              <span className="text-[10px] text-slate-500 font-medium">Cópia individual para formulários</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {/* 1. Copiar CNPJ */}
+              <button
+                type="button"
+                onClick={() => handleCopy(cnpjValor, 'CNPJ')}
+                className="p-2 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-white bg-slate-100/40 text-left transition-colors flex items-center justify-between group cursor-pointer"
+                title={cnpjValor ? `Copiar CNPJ: ${cnpjValor}` : 'Sem CNPJ'}
+              >
+                <div className="min-w-0 pr-1.5">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">1. CNPJ</span>
+                  <span className="text-xs font-mono font-medium text-slate-800 truncate block">
+                    {cnpjValor || '—'}
+                  </span>
+                </div>
+                <Copy className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 shrink-0" />
+              </button>
+
+              {/* 2. Copiar Nome */}
+              <button
+                type="button"
+                onClick={() => handleCopy(nomeValor, 'Nome')}
+                className="p-2 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-white bg-slate-100/40 text-left transition-colors flex items-center justify-between group cursor-pointer"
+                title={nomeValor ? `Copiar Nome: ${nomeValor}` : 'Sem Nome'}
+              >
+                <div className="min-w-0 pr-1.5">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">2. Nome</span>
+                  <span className="text-xs font-medium text-slate-800 truncate block">
+                    {nomeValor || '—'}
+                  </span>
+                </div>
+                <Copy className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 shrink-0" />
+              </button>
+
+              {/* 3. Copiar Razão Social */}
+              <button
+                type="button"
+                onClick={() => handleCopy(razaoValor, 'Razão Social')}
+                className="p-2 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-white bg-slate-100/40 text-left transition-colors flex items-center justify-between group cursor-pointer"
+                title={razaoValor ? `Copiar Razão Social: ${razaoValor}` : 'Sem Razão Social'}
+              >
+                <div className="min-w-0 pr-1.5">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">3. Razão Social</span>
+                  <span className="text-xs font-medium text-slate-800 truncate block">
+                    {razaoValor || '—'}
+                  </span>
+                </div>
+                <Copy className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 shrink-0" />
+              </button>
+
+              {/* 4. Copiar Telefone */}
+              <button
+                type="button"
+                onClick={() => handleCopy(telefoneValor, 'Telefone')}
+                className="p-2 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-white bg-slate-100/40 text-left transition-colors flex items-center justify-between group cursor-pointer"
+                title={telefoneValor ? `Copiar Telefone: ${telefoneValor}` : 'Sem Telefone'}
+              >
+                <div className="min-w-0 pr-1.5">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">4. Telefone</span>
+                  <span className="text-xs font-medium text-slate-800 truncate block">
+                    {telefoneValor || '—'}
+                  </span>
+                </div>
+                <Copy className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 shrink-0" />
+              </button>
+
+              {/* 5. Copiar Endereço Completo */}
+              <button
+                type="button"
+                onClick={() => handleCopy(enderecoCompletoValor, 'Endereço Completo')}
+                className="p-2 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-white bg-slate-100/40 text-left transition-colors flex items-center justify-between group sm:col-span-2 cursor-pointer"
+                title={enderecoCompletoValor ? `Copiar Endereço Completo: ${enderecoCompletoValor}` : 'Sem Endereço'}
+              >
+                <div className="min-w-0 pr-1.5">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">5. Endereço Completo</span>
+                  <span className="text-xs font-medium text-slate-800 truncate block">
+                    {enderecoCompletoValor || '—'}
+                  </span>
+                </div>
+                <Copy className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 shrink-0" />
+              </button>
+            </div>
+
+            {/* Botão extra no final: Copiar Tudo (Bloco) */}
+            <div className="pt-2 border-t border-slate-200/70 flex justify-end">
+              <button
+                type="button"
+                onClick={() => handleCopy(blocoTudoValor, 'Todos os Dados')}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-white hover:border-slate-400 bg-white/60 text-slate-700 hover:text-slate-900 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                title="Copiar os 5 dados cadastrais, um por linha"
+              >
+                <Copy className="w-3.5 h-3.5 text-slate-500" />
+                <span>Copiar Tudo (Bloco)</span>
+              </button>
+            </div>
+          </div>
+
           {/* Card de Cadência Automática & Próximo Follow-up (Sprint 1) */}
           <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-slate-800 shadow-2xs">
             <div className="flex items-center justify-between">
@@ -353,7 +1283,14 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
                         if (!onUpdateLead) return;
                         const atual = lead.pixCount || 0;
                         const novo = (atual + 1) % 4; // 0→1→2→3→0
-                        onUpdateLead(definirPix(lead, novo));
+                        const leadPix = definirPix(lead, novo);
+                        onUpdateLead({
+                          ...leadPix,
+                          produtosAtivos: {
+                            ...leadPix.produtosAtivos,
+                            conta: novo >= 3,
+                          },
+                        });
                       }}
                       className={`flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/60 ${
                         cA ? 'text-emerald-700' : (lead.pixCount||0) > 0 ? 'text-amber-700' : 'text-slate-500'
@@ -382,6 +1319,28 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
                         <Edit2 className="w-3 h-3" />
                       </button>
                     )}
+                    {contaAtiva(lead) && onUpdateLead && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm('Desativar conta PJ? O lead deixará de pontuar por conta.')) {
+                            const leadPix = definirPix(lead, 0);
+                            onUpdateLead({
+                              ...leadPix,
+                              produtosAtivos: {
+                                ...leadPix.produtosAtivos,
+                                conta: false,
+                              },
+                            });
+                          }
+                        }}
+                        title="Desativar conta PJ"
+                        className="w-3 h-3 flex items-center justify-center rounded-full bg-rose-100 text-rose-600 hover:bg-rose-200 text-[9px] font-bold ml-0.5"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                   
                   <span className="text-slate-300">·</span>
@@ -402,7 +1361,14 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
                           if (!onUpdateLead) return;
                           const v = Number(e.target.value);
                           if (v > 0) {
-                            onUpdateLead(registrarVendaMaquina(lead, v));
+                            const leadMaq = registrarVendaMaquina(lead, v);
+                            onUpdateLead({
+                              ...leadMaq,
+                              produtosAtivos: {
+                                ...leadMaq.produtosAtivos,
+                                maquina: (leadMaq.maquinaVendas || 0) >= 500,
+                              },
+                            });
                             e.target.value = '';
                           }
                         }}
@@ -430,6 +1396,28 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
                         title="Editar data de ativação da Máquina"
                       >
                         <Edit2 className="w-3 h-3" />
+                      </button>
+                    )}
+                    {maquinaAtiva(lead) && onUpdateLead && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm('Desativar máquina? O lead deixará de pontuar por GetNet.')) {
+                            const leadMaq = definirMaquinaVendas(lead, 0);
+                            onUpdateLead({
+                              ...leadMaq,
+                              produtosAtivos: {
+                                ...leadMaq.produtosAtivos,
+                                maquina: false,
+                              },
+                            });
+                          }
+                        }}
+                        title="Desativar máquina"
+                        className="w-3 h-3 flex items-center justify-center rounded-full bg-rose-100 text-rose-600 hover:bg-rose-200 text-[9px] font-bold ml-0.5"
+                      >
+                        ✕
                       </button>
                     )}
                   </div>
@@ -897,6 +1885,9 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
           </div>
 
         </div>
+      )}
+
+        </div>
 
       </div>
 
@@ -915,3 +1906,6 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
     </div>
   );
 };
+
+export default LeadDetailDrawer;
+

@@ -1,11 +1,12 @@
 export type LeadStatus =
   | 'novo'
-  | 'contato_1'
-  | 'contato_2'
-  | 'contato_3'
+  | 'em_prospeccao'
   | 'negociacao'
   | 'fechado'
-  | 'descartado';
+  | 'descartado'
+  | 'contato_1'
+  | 'contato_2'
+  | 'contato_3';
 
 export interface Socio {
   nome: string;
@@ -88,6 +89,19 @@ export interface Lead {
   dataCompletaReceita?: {
     opcao_pelo_mei?: boolean;
     [key: string]: any;
+  };
+  parceiroSantander?: {
+    status: 'nao_verificado' | 'apto' | 'bloqueado';
+    verificadoEm?: string;
+    motivoBloqueio?: string;
+  };
+  nome?: string;
+  telefone?: string;
+  cidade?: string;
+  cadenciaContatos?: 0 | 1 | 2 | 3;
+  produtosAtivos?: {
+    conta?: boolean;
+    maquina?: boolean;
   };
 }
 

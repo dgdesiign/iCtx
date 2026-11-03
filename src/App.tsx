@@ -13,9 +13,12 @@ import { ehFollowUpVencido } from './utils/cadencia';
 import { calcularScore } from './utils/scoring';
 import { Header } from './components/Header';
 import { PipelineKanban, CadenciaFiltro } from './components/PipelineKanban';
+import { calcularAtivacaoStatus } from './utils/ativacao';
+export type { CadenciaFiltro } from './components/PipelineKanban';
 import { BatchMessageModal } from './components/BatchMessageModal';
 import { CoachModal } from './components/CoachModal';
 import { SupervisorDashboard } from './components/SupervisorDashboard';
+import { MetasDashboard } from './components/MetasDashboard';
 import { MessageComposerModal } from './components/MessageComposerModal';
 import { CallScriptModal } from './components/CallScriptModal';
 import { LeadDetailDrawer } from './components/LeadDetailDrawer';
@@ -51,7 +54,6 @@ import {
   initAuth,
   getAccessToken,
   setCachedAccessToken,
-  tentarReautenticar,
 } from './services/googleAuthService';
 import {
   findOrCreateSpreadsheet,
@@ -94,7 +96,30 @@ export default function App() {
       // Descarta incondicionalmente leads de exemplo (/^lead_[1-9]\d?$/)
       return salvos
         .filter((l) => l && l.id && !isSampleLeadId(l.id))
-        .map((l) => autocorrigeLead(l));
+        .map((l) => {
+          const corrigido = autocorrigeLead(l);
+          let status = corrigido.status;
+          let cadencia = corrigido.cadenciaContatos;
+
+          if (status === 'contato_1' || status === 'contato_2' || status === 'contato_3') {
+            if (cadencia === undefined) {
+              cadencia = status === 'contato_1' ? 1 : status === 'contato_2' ? 2 : 3;
+            }
+            status = 'em_prospeccao';
+          }
+
+          const produtosAtivos = corrigido.produtosAtivos || {
+            conta: Boolean(corrigido.contaAtivaEm || (corrigido.pixCount ?? 0) >= 3),
+            maquina: Boolean(corrigido.maquinaAtivaEm || (corrigido.maquinaVendas ?? 0) >= 500),
+          };
+
+          return {
+            ...corrigido,
+            status,
+            cadenciaContatos: (cadencia ?? 0) as 0 | 1 | 2 | 3,
+            produtosAtivos,
+          };
+        });
     }
     return [];
   });
@@ -106,6 +131,7 @@ export default function App() {
 
   // Modais
   const [isSupervisorOpen, setIsSupervisorOpen] = useState(false);
+  const [isMetasOpen, setIsMetasOpen] = useState(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationStatus>(() =>
     getNotificationPermissionStatus()
@@ -161,6 +187,8 @@ export default function App() {
           ? ehFollowUpVencido(lead)
           : filtroCadencia === 'score'
           ? calcularScore(lead) >= 75
+          : filtroCadencia === 'risco'
+          ? (lead.status === 'fechado' && calcularAtivacaoStatus(lead) === 'risco')
           : true;
 
       return matchBusca && matchStatus && matchCadencia;
@@ -236,18 +264,12 @@ export default function App() {
       setPendingSyncCount(0);
     } catch (e: any) {
       if (e?.message === 'TOKEN_EXPIRADO') {
-        const renovado = await tentarReautenticar();
-        if (renovado) {
-          try {
-            await fn(); // retry uma vez
-            setPendingSyncCount(0);
-            return;
-          } catch {
-            // fallback abaixo
-          }
-        }
+        // NÃO chamar tentarReautenticar() automaticamente
+        // (popup é bloqueado pelo navegador fora de user gesture)
+        // Apenas marcar como pendente. Usuário reconecta manualmente 
+        // ao clicar no badge vermelho do Header.
         setPendingSyncCount((prev) => prev + 1);
-        console.warn('[sync] token expirado, pendências:', pendingSyncCount + 1);
+        console.warn('[sync] token expirado — clique no badge vermelho do Header para reconectar');
       } else {
         throw e;
       }
@@ -428,9 +450,38 @@ export default function App() {
     setLeads((prev) => {
       let alterado = false;
       const migrados = prev.map((l) => {
+        let mudou = false;
+        let novoStatus = l.status;
+        let cadencia = l.cadenciaContatos;
+
         if (l.dataAbertura && !l.cnpjInicio && l.status !== 'fechado') {
+          mudou = true;
+          l = { ...l, cnpjInicio: l.dataAbertura };
+        }
+
+        if (novoStatus === 'contato_1' || novoStatus === 'contato_2' || novoStatus === 'contato_3') {
+          mudou = true;
+          if (cadencia === undefined) {
+            cadencia = novoStatus === 'contato_1' ? 1 : novoStatus === 'contato_2' ? 2 : 3;
+          }
+          novoStatus = 'em_prospeccao';
+        }
+
+        const produtosAtivos = l.produtosAtivos || {
+          conta: Boolean(l.contaAtivaEm || (l.pixCount ?? 0) >= 3),
+          maquina: Boolean(l.maquinaAtivaEm || (l.maquinaVendas ?? 0) >= 500),
+        };
+
+        if (!l.produtosAtivos) mudou = true;
+
+        if (mudou) {
           alterado = true;
-          return { ...l, cnpjInicio: l.dataAbertura };
+          return {
+            ...l,
+            status: novoStatus,
+            cadenciaContatos: (cadencia ?? 0) as 0 | 1 | 2 | 3,
+            produtosAtivos,
+          };
         }
         return l;
       });
@@ -717,6 +768,12 @@ export default function App() {
     }
   };
 
+  const handleOpenAtivacao = (lead: Lead) => {
+    setLeadParaMensagem(null);
+    setLeadParaLigacao(null);
+    setLeadParaDetalhes(autocorrigeLead(lead));
+  };
+
   const handleSaveNotas = (leadId: string, notas: string) => {
     setLeads((prev) =>
       prev.map((l) => (l.id === leadId ? { ...l, notas, atualizadoEm: new Date().toISOString() } : l))
@@ -789,7 +846,7 @@ export default function App() {
   const existingCnpjs = new Set(leads.map((l) => l.cnpj));
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col text-slate-800">
+    <div className="min-h-[100dvh] bg-slate-100 flex flex-col text-slate-800">
       
       {/* Top Header Navigation */}
       <Header
@@ -797,7 +854,6 @@ export default function App() {
         onOpenBulkImport={() => setIsBulkImportOpen(true)}
         onOpenSingleLead={() => setIsSingleLeadOpen(true)}
         onOpenTemplates={() => setIsTemplatesOpen(true)}
-        onOpenBatchMessages={() => setIsBatchModalOpen(true)}
         onExportCsv={() => exportarLeadsCsv(leads)}
         onOpenInstallModal={() => setIsInstallOpen(true)}
         onOpenGoogleSheets={() => setIsGoogleModalOpen(true)}
@@ -808,6 +864,7 @@ export default function App() {
         isSupervisor={usuarioAtivo.role === 'supervisor'}
         usuarioRole={usuarioAtivo.role}
         onOpenSupervisorDashboard={() => setIsSupervisorOpen(true)}
+        onOpenMetas={() => setIsMetasOpen(true)}
         onToggleRole={() =>
           setUsuarioAtivo((prev) => ({
             ...prev,
@@ -925,6 +982,7 @@ export default function App() {
           onOpenMessageComposer={(lead) => setLeadParaMensagem(autocorrigeLead(lead))}
           onOpenCallScript={(lead) => setLeadParaLigacao(autocorrigeLead(lead))}
           onOpenDetails={(lead) => setLeadParaDetalhes(autocorrigeLead(lead))}
+          onOpenAtivacao={handleOpenAtivacao}
           onUpdateStatus={handleUpdateLeadStatus}
           onDeleteLead={handleDeleteLead}
           filtroCadencia={filtroCadencia}
@@ -1094,6 +1152,15 @@ export default function App() {
         leads={leads}
         onSelectLead={(lead) => setLeadParaDetalhes(lead)}
       />
+
+      {/* Modal 14: Minhas Metas & Simulador de Projeção (Sprint R7) */}
+      {isMetasOpen && (
+        <MetasDashboard
+          isOpen={true}
+          onClose={() => setIsMetasOpen(false)}
+          leads={leads}
+        />
+      )}
     </div>
   );
 }

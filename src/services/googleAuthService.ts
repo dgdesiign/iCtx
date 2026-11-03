@@ -77,6 +77,21 @@ export const initAuth = (
   });
 };
 
+export function gravarTokenSessao(accessToken: string): void {
+  const expiresAt = Date.now() + 55 * 60 * 1000; // 55 minutos
+  try {
+    sessionStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({
+        accessToken,
+        expiresAt,
+      })
+    );
+  } catch (e) {
+    console.warn('Não foi possível gravar no sessionStorage:', e);
+  }
+}
+
 /**
  * Dispara popup oficial do Google para login e autorização das Planilhas.
  * Grava { accessToken, expiresAt = agora + 55 min } em sessionStorage.
@@ -91,15 +106,7 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     }
 
     cachedAccessToken = credential.accessToken;
-    const expiresAt = Date.now() + 55 * 60 * 1000;
-    try {
-      sessionStorage.setItem(
-        SESSION_KEY,
-        JSON.stringify({ accessToken: cachedAccessToken, expiresAt })
-      );
-    } catch (e) {
-      console.warn('Não foi possível gravar no sessionStorage:', e);
-    }
+    gravarTokenSessao(credential.accessToken);
 
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
@@ -121,7 +128,7 @@ export const getAccessToken = async (): Promise<string | null> => {
       return null;
     }
     const parsed: StoredSession = JSON.parse(raw);
-    if (!parsed.accessToken || parsed.expiresAt <= Date.now() + 60 * 1000) {
+    if (!parsed.accessToken || !parsed.expiresAt || parsed.expiresAt <= Date.now() + 60 * 1000) {
       cachedAccessToken = null;
       sessionStorage.removeItem(SESSION_KEY);
       return null;
@@ -140,12 +147,7 @@ export const getAccessToken = async (): Promise<string | null> => {
 export const setCachedAccessToken = (token: string | null) => {
   cachedAccessToken = token;
   if (token) {
-    try {
-      sessionStorage.setItem(
-        SESSION_KEY,
-        JSON.stringify({ accessToken: token, expiresAt: Date.now() + 55 * 60 * 1000 })
-      );
-    } catch {}
+    gravarTokenSessao(token);
   } else {
     try {
       sessionStorage.removeItem(SESSION_KEY);
@@ -182,13 +184,7 @@ export async function tentarReautenticar(): Promise<boolean> {
     }
 
     cachedAccessToken = credential.accessToken;
-    const expiresAt = Date.now() + 55 * 60 * 1000;
-    try {
-      sessionStorage.setItem(
-        SESSION_KEY,
-        JSON.stringify({ accessToken: cachedAccessToken, expiresAt })
-      );
-    } catch {}
+    gravarTokenSessao(credential.accessToken);
 
     return true;
   } catch (error) {
@@ -207,7 +203,7 @@ export async function garantirTokenValido(): Promise<string | null> {
     if (raw) {
       const parsed: StoredSession = JSON.parse(raw);
       const agora = Date.now();
-      if (parsed.accessToken && parsed.expiresAt > agora + 60 * 1000) {
+      if (parsed.accessToken && parsed.expiresAt && parsed.expiresAt > agora + 60 * 1000) {
         cachedAccessToken = parsed.accessToken;
         return cachedAccessToken;
       }

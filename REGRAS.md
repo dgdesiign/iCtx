@@ -32,7 +32,11 @@
   - Token expirado durante sessão: tentativa automática de silent refresh (`signInWithPopup`). Se bloqueado pelo navegador ou recusado, incrementa `pendingSyncCount` e exibe ponto vermelho com badge no Header.
   - Pendências locais: leads com hash ≠ `ictx_sync_base`. Visíveis no Header via ponto vermelho + tooltip com contagem ("N leads pendentes de sync").
 - Apps Script: existe APENAS para o trigger diário `enviarResumoDiario` 
-  (8h). Não processa dados — só lê a aba Leads e envia e-mail resumo.
+  (8h). O e-mail resumo HTML é gerado pelo Apps Script de forma independente 
+  do app: ele lê a aba `Leads` (coluna R com JSON completo), computa métricas, 
+  pontos do mês (espelho de `pontos.ts`) e envia o resumo diário via `MailApp.sendEmail`. 
+  Não processa gravações ou alterações nos dados do app. Se a lógica de `pontos.ts` 
+  mudar no app, o snippet do Apps Script precisa ser atualizado manualmente na planilha.
 - Não usar chunking 45k, insertColumnsAfter, LockService (arquitetura 
   anterior, obsoleta).
 - Sem migração de stack.

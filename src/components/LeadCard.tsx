@@ -1,7 +1,5 @@
 import React from 'react';
 import {
-  MessageCircle,
-  PhoneCall,
   CreditCard,
 } from 'lucide-react';
 import { Lead, LeadStatus } from '../types/crm';
@@ -11,6 +9,7 @@ import { ehCelularBR, formatarCelularBR } from '../utils/telefone';
 import { abreviarCidade } from '../utils/cidade';
 import { abreviarEmpresaMEI } from '../utils/empresa';
 import { potencial } from '../utils/pontos';
+import { calcularAtivacaoStatus, janelaCheia, contaAtiva, maquinaAtiva } from '../utils/ativacao';
 
 const PixIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg 
@@ -38,11 +37,11 @@ const PixIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 interface LeadCardProps {
   lead: Lead;
-  onOpenMessageComposer: (lead: Lead) => void;
-  onOpenCallScript: (lead: Lead) => void;
+  onOpenMessageComposer?: (lead: Lead) => void;
+  onOpenCallScript?: (lead: Lead) => void;
   onOpenDetails: (lead: Lead) => void;
-  onUpdateStatus: (leadId: string, status: LeadStatus) => void;
-  onOpenAtivacao?: (lead: Lead, tipo: 'pix' | 'maquina') => void;
+  onUpdateStatus?: (leadId: string, status: LeadStatus) => void;
+  onOpenAtivacao?: (lead: Lead) => void;
 }
 
 export const LeadCard: React.FC<LeadCardProps> = ({
@@ -50,6 +49,7 @@ export const LeadCard: React.FC<LeadCardProps> = ({
   onOpenMessageComposer,
   onOpenCallScript,
   onOpenDetails,
+  onUpdateStatus,
   onOpenAtivacao,
 }) => {
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
@@ -98,21 +98,50 @@ export const LeadCard: React.FC<LeadCardProps> = ({
   if (cidadeAbv) segmentos.push(cidadeAbv);
   const linhaContexto = segmentos.join(' · ');
 
-  // 6. Telefone (WhatsApp)
+  // 6. Telefone formatado
   const wa = formatarCelularBR(lead.telefonePrincipal || lead.telefonePrincipalFormatado);
 
-  // 7. Ativação
+  // 7. Ativação & Pontuação
   const pixCount = lead.pixCount || 0;
   const maquinaVendas = lead.maquinaVendas || 0;
   const potencialInfo = potencial(lead);
-  const potencialPontos = potencialInfo.total;
+  const pontosTotais = potencialInfo.total;
+
+  let pontosAtuais = 0;
+  if (lead.status === 'fechado') {
+    if (contaAtiva(lead)) {
+      pontosAtuais += potencialInfo.conta;
+    }
+    if (maquinaAtiva(lead)) {
+      pontosAtuais += potencialInfo.getnet;
+    }
+    if (lead.fitContratadoEm) {
+      pontosAtuais += 1;
+    }
+  }
+
+  const cadenciaContatos = lead.cadenciaContatos ?? 0;
+
+  const statusAtiv = lead.status === 'fechado' 
+    ? calcularAtivacaoStatus(lead) 
+    : null;
+  const j = lead.status === 'fechado' ? janelaCheia(lead) : null;
+  const completa = contaAtiva(lead) && 
+                   (lead.vendeuMaquina === false || maquinaAtiva(lead));
+  const emRisco = statusAtiv === 'risco' && !completa;
 
   return (
     <div
       draggable
       onDragStart={handleDragStart}
       onClick={() => onOpenDetails(lead)}
-      className="border border-slate-200/70 shadow-none rounded-lg bg-white hover:border-slate-300 hover:shadow-sm transition-all duration-150 p-2.5 group text-slate-800 cursor-grab active:cursor-grabbing relative"
+      className={`border shadow-none rounded-lg bg-white transition-all duration-150 p-3 group text-slate-800 cursor-grab active:cursor-grabbing relative w-full ${
+        emRisco 
+          ? 'border-rose-300 bg-rose-50/30 animate-pulse' 
+          : j?.fase === 'M1' && j.diasRestantesM1 <= 10 && !completa
+            ? 'border-amber-300 bg-amber-50/30'
+            : 'border-slate-200/70 hover:border-slate-300 hover:shadow-sm'
+      }`}
     >
       {/* Selo Visual de Follow-up (Absolute, se vencido) */}
       {isVencido && (
@@ -129,15 +158,15 @@ export const LeadCard: React.FC<LeadCardProps> = ({
           }
         >
           {infoFollowUp.status === 'hoje'
-            ? '⏳ Hoje'
-            : `⏰ Vencido há ${diasAtraso > 0 ? diasAtraso : 1}d`}
+            ? 'Hoje'
+            : `Vencido há ${diasAtraso > 0 ? diasAtraso : 1}d`}
         </span>
       )}
 
       {/* Linha 1: Empresa e Score Dot */}
       <div className={`flex items-center justify-between gap-1.5 min-w-0 ${isVencido ? 'pr-16' : ''}`}>
         <h4
-          className="font-semibold text-[13px] text-slate-900 truncate leading-tight hover:text-red-700 cursor-pointer"
+          className="font-semibold text-sm text-slate-900 truncate leading-tight hover:text-red-700 cursor-pointer"
           title={`${empresaExibida} (Clique para ver detalhes)`}
         >
           {empresaExibida}
@@ -153,34 +182,41 @@ export const LeadCard: React.FC<LeadCardProps> = ({
 
       {/* Linha 2: Contexto Único (contato · porte · cidade/UF) */}
       {linhaContexto && (
-        <p className="text-[11px] text-slate-500 truncate mt-0.5 leading-tight">
+        <p className="text-xs text-slate-500 truncate mt-1 leading-tight">
           {linhaContexto}
         </p>
       )}
 
       {/* Linha 3: Telefone Celular formatado */}
       {wa && (
-        <p className="text-[10px] font-mono text-slate-400 truncate mt-1 leading-none">
+        <p className="text-xs font-mono text-slate-400 truncate mt-1 leading-none">
           {wa}
         </p>
       )}
 
-      {/* Linha 4: Nova linha de rodapé com indicador de potencial e 4 ícones em linha única */}
-      <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-slate-100">
-        {/* Esquerda: indicador de potencial */}
-        <span className="text-[10px] font-bold text-slate-500 flex items-center gap-0.5">
-          💰 {potencialPontos}
-        </span>
+      {/* Linha 4: Indicadores de texto ultralimpos (sem colchetes) e ícones de ativação (sem botões de zap/ligar) */}
+      <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-slate-100 gap-1.5">
+        {/* Esquerda: pontosAtuais/pontosTotais cadenciaContatos/3 (sem colchetes) */}
+        <div className="flex items-center gap-2 text-xs font-mono text-slate-500 font-medium select-none">
+          <span title={`Pontos: ${pontosAtuais} de ${pontosTotais} pontos possíveis`}>
+            {pontosAtuais}/{pontosTotais}
+          </span>
+          <span title={`Cadência: ${cadenciaContatos} de 3 contatos realizados`}>
+            {cadenciaContatos}/3
+          </span>
+        </div>
 
-        {/* Direita: 4 ícones em linha única */}
-        <div className="flex items-center gap-0.5">
+        {/* Direita: Ativações PIX e Máquina */}
+        <div className="flex items-center gap-1">
           {/* PIX */}
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               if (lead.status === 'fechado' && onOpenAtivacao) {
-                onOpenAtivacao(lead, 'pix');
+                onOpenAtivacao(lead);
+              } else {
+                onOpenDetails(lead);
               }
             }}
             disabled={lead.status !== 'fechado'}
@@ -210,7 +246,9 @@ export const LeadCard: React.FC<LeadCardProps> = ({
             onClick={(e) => {
               e.stopPropagation();
               if (lead.status === 'fechado' && onOpenAtivacao) {
-                onOpenAtivacao(lead, 'maquina');
+                onOpenAtivacao(lead);
+              } else {
+                onOpenDetails(lead);
               }
             }}
             disabled={lead.status !== 'fechado'}
@@ -234,33 +272,21 @@ export const LeadCard: React.FC<LeadCardProps> = ({
             <CreditCard className="w-3.5 h-3.5" />
           </button>
 
-          {/* WhatsApp — só celular */}
-          {ehCelularBR(lead.telefonePrincipal || lead.telefonePrincipalFormatado) && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenMessageComposer(lead);
-              }}
-              title="WhatsApp"
-              className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-slate-100 text-emerald-600 transition-colors cursor-pointer"
-            >
-              <MessageCircle className="w-3.5 h-3.5" />
-            </button>
+          {/* Contagem de dias na linha de ativação */}
+          {j && lead.status === 'fechado' && (
+            <span className={`text-[9px] font-bold ml-1 ${
+              emRisco 
+                ? 'text-rose-600'
+                : j.fase === 'M2'
+                  ? 'text-amber-600'
+                  : 'text-slate-500'
+            }`}>
+              {j.fase === 'M0' ? `M0 · ${j.diasRestantesM1}d`
+               : j.fase === 'M1' ? `M1 · ${j.diasRestantesM1}d`
+               : j.fase === 'M2' ? `M2 · ${j.diasRestantesM2}d`
+               : 'exp.'}
+            </span>
           )}
-
-          {/* Telefone */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenCallScript(lead);
-            }}
-            title="Ligar"
-            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-slate-100 text-purple-600 transition-colors cursor-pointer"
-          >
-            <PhoneCall className="w-3.5 h-3.5" />
-          </button>
         </div>
       </div>
     </div>

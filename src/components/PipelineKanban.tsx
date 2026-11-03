@@ -12,14 +12,62 @@ import {
   PhoneCall,
   MessageCircle,
   Bell,
+  AlertTriangle,
 } from 'lucide-react';
 import { Lead, LeadStatus } from '../types/crm';
-import { KANBAN_COLUMNS } from '../utils/storage';
 import { ehFollowUpVencido } from '../utils/cadencia';
 import { calcularScore } from '../utils/scoring';
+import { calcularAtivacaoStatus } from '../utils/ativacao';
 import { LeadCard } from './LeadCard';
 
-export type CadenciaFiltro = 'todos' | 'followup_hoje' | 'score';
+export type CadenciaFiltro = 'todos' | 'followup_hoje' | 'score' | 'risco';
+
+export interface ColunaKanbanConfig {
+  id: LeadStatus;
+  titulo: string;
+  subtitulo: string;
+  corHeader: string;
+  badgeCor: string;
+}
+
+export const COLUNAS_KANBAN: ColunaKanbanConfig[] = [
+  {
+    id: 'novo',
+    titulo: 'Novos Leads',
+    subtitulo: 'Aguardando 1º contato',
+    corHeader: 'bg-blue-50/70 border-b border-blue-100 text-blue-900',
+    badgeCor: 'bg-blue-100 text-blue-800',
+  },
+  {
+    id: 'em_prospeccao',
+    titulo: 'Em Prospecção',
+    subtitulo: 'Cadência em andamento',
+    corHeader: 'bg-amber-50/70 border-b border-amber-100 text-amber-900',
+    badgeCor: 'bg-amber-100 text-amber-800',
+  },
+  {
+    id: 'negociacao',
+    titulo: 'Negociação',
+    subtitulo: 'Proposta e fechamento',
+    corHeader: 'bg-purple-50/70 border-b border-purple-100 text-purple-900',
+    badgeCor: 'bg-purple-100 text-purple-800',
+  },
+  {
+    id: 'fechado',
+    titulo: 'Fechado',
+    subtitulo: 'Conta/Máquina aberta',
+    corHeader: 'bg-emerald-50/70 border-b border-emerald-100 text-emerald-900',
+    badgeCor: 'bg-emerald-100 text-emerald-800',
+  },
+  {
+    id: 'descartado',
+    titulo: 'Descartado',
+    subtitulo: 'Sem interesse ou inválido',
+    corHeader: 'bg-slate-100/70 border-b border-slate-200 text-slate-800',
+    badgeCor: 'bg-slate-200 text-slate-700',
+  },
+];
+
 
 interface PipelineKanbanProps {
   leads: Lead[];
@@ -28,6 +76,7 @@ interface PipelineKanbanProps {
   onOpenDetails: (lead: Lead) => void;
   onUpdateStatus: (leadId: string, status: LeadStatus) => void;
   onDeleteLead?: (leadId: string) => void;
+  onOpenAtivacao?: (lead: Lead) => void;
   filtroCadencia: CadenciaFiltro;
   onFiltroCadenciaChange: (filtro: CadenciaFiltro) => void;
   busca: string;
@@ -43,6 +92,7 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
   onOpenDetails,
   onUpdateStatus,
   onDeleteLead,
+  onOpenAtivacao,
   filtroCadencia,
   onFiltroCadenciaChange,
   busca,
@@ -76,6 +126,8 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
         ? ehFollowUpVencido(lead)
         : filtroCadencia === 'score'
         ? calcularScore(lead) >= 75
+        : filtroCadencia === 'risco'
+        ? (lead.status === 'fechado' && calcularAtivacaoStatus(lead) === 'risco')
         : true;
 
     return matchBusca && matchStatus && matchCadencia;
@@ -142,6 +194,40 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
           </span>
         </button>
 
+        {/* Pílula: Ativações em risco */}
+        {(() => {
+          const totalRisco = leads.filter(l => 
+            l.status === 'fechado' && 
+            calcularAtivacaoStatus(l) === 'risco'
+          ).length;
+          return (
+            <button
+              type="button"
+              onClick={() => onFiltroCadenciaChange(
+                filtroCadencia === 'risco' ? 'todos' : 'risco'
+              )}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 shadow-2xs border ${
+                filtroCadencia === 'risco'
+                  ? 'bg-rose-600 text-white shadow-xs ring-2 ring-rose-400/40 border-rose-600'
+                  : 'bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-700 border-slate-200'
+              }`}
+              title="Leads em M1 expirando ou M2 sem ativação completa"
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>Ativações em risco</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                filtroCadencia === 'risco'
+                  ? 'bg-white/20 text-white'
+                  : totalRisco > 0
+                    ? 'bg-rose-100 text-rose-800'
+                    : 'bg-slate-100 text-slate-600'
+              }`}>
+                {totalRisco}
+              </span>
+            </button>
+          );
+        })()}
+
         {/* Pílula 3: Todos */}
         <button
           type="button"
@@ -197,7 +283,7 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
               className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-red-600"
             >
               <option value="todos">Todas as etapas ({leads.length})</option>
-              {KANBAN_COLUMNS.map((col) => (
+              {COLUNAS_KANBAN.map((col) => (
                 <option key={col.id} value={col.id}>
                   {col.titulo} ({leads.filter((l) => l.status === col.id).length})
                 </option>
@@ -272,8 +358,8 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
 
       {/* Main View: Kanban Columns with Drag and Drop */}
       {modoVisualizacao === 'kanban' && (
-        <div className="flex gap-1 overflow-x-auto pb-4 pt-1 items-start min-h-[72vh] select-none snap-x snap-mandatory scroll-smooth px-0.5">
-          {KANBAN_COLUMNS.map((coluna) => {
+        <div className="flex flex-row gap-4 overflow-x-auto h-full p-4 snap-x select-none scroll-smooth">
+          {COLUNAS_KANBAN.map((coluna) => {
             const leadsDaColuna = leadsFiltrados.filter((l) => l.status === coluna.id);
             const leadsDaColunaOrdenados = [...leadsDaColuna].sort((a, b) => {
               if (ordenarPor === 'score') {
@@ -312,7 +398,7 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
                   }
                   setDragOverColumn(null);
                 }}
-                className={`w-[85vw] max-w-[210px] sm:w-[210px] shrink-0 snap-center bg-slate-100/90 rounded-2xl flex flex-col max-h-[82vh] border transition-all duration-150 ${
+                className={`w-[280px] min-w-[280px] shrink-0 snap-start bg-slate-100/90 rounded-2xl flex flex-col max-h-[calc(100dvh-220px)] border transition-all duration-150 ${
                   isDragOver
                     ? 'border-red-500 ring-2 ring-red-400/50 bg-red-50/50 shadow-md scale-[1.01]'
                     : 'border-slate-200 shadow-2xs'
@@ -356,6 +442,7 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
                         onOpenCallScript={onOpenCallScript}
                         onOpenDetails={onOpenDetails}
                         onUpdateStatus={onUpdateStatus}
+                        onOpenAtivacao={onOpenAtivacao}
                       />
                     ))
                   )}
@@ -405,7 +492,7 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
                       return dataB - dataA;
                     })
                     .map((lead) => {
-                    const colConfig = KANBAN_COLUMNS.find((c) => c.id === lead.status);
+                    const colConfig = COLUNAS_KANBAN.find((c) => c.id === lead.status);
                     return (
                       <tr key={lead.id} className="hover:bg-slate-50/70 transition-colors">
                         <td className="py-2.5 px-4">
@@ -434,7 +521,7 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
                             onChange={(e) => onUpdateStatus(lead.id, e.target.value as LeadStatus)}
                             className="text-xs font-semibold border border-slate-200 rounded px-2 py-0.5 bg-white text-slate-800"
                           >
-                            {KANBAN_COLUMNS.map((col) => (
+                            {COLUNAS_KANBAN.map((col) => (
                               <option key={col.id} value={col.id}>
                                 {col.titulo}
                               </option>

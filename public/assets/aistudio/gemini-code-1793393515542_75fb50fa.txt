@@ -1,0 +1,63 @@
+Contexto: iCtx CRM (React 18 + TS + Vite), produção real. Siga REGRAS.md.
+
+Tarefa: R8 — Adicionar "Ficha Cadastral" com botões de cópia e "Verificação Parceiro Santander" no Dossiê.
+
+ESCOPO — altere SOMENTE:
+1) src/types/crm.ts
+2) src/components/LeadDetailDrawer.tsx
+
+PROIBIDO: Outros arquivos, lógica de cálculo, Kanban, Dashboard, pontos.ts.
+
+═══════════════════════════════════════════════════════════
+PASSO 1 — src/types/crm.ts
+═══════════════════════════════════════════════════════════
+Na interface `Lead`, adicione a propriedade opcional:
+
+  parceiroSantander?: {
+    status: 'nao_verificado' | 'apto' | 'bloqueado';
+    verificadoEm?: string;
+    motivoBloqueio?: string;
+  };
+
+═══════════════════════════════════════════════════════════
+PASSO 2 — src/components/LeadDetailDrawer.tsx
+═══════════════════════════════════════════════════════════
+Adicionar as seguintes features dentro do Dossiê do Lead (abaixo do Header e Status):
+
+1. ESTADOS E IMPORTS:
+   - Importar ícones do lucide-react: `Copy`, `CheckCircle2`, `XCircle`, `Building2`.
+   - Criar estado para o modal de bloqueio: `const [bloqueioAtivo, setBloqueioAtivo] = useState(false);`
+   - Criar estado para o motivo: `const [motivoBloqueio, setMotivoBloqueio] = useState('');`
+   - Criar função utilitária `handleCopy(text: string, label: string)` que usa `navigator.clipboard.writeText(text)` e dispara um alert ou toast (ex: "CNPJ copiado!").
+
+2. BLOCO A: VERIFICAÇÃO PARCEIRO SANTANDER
+   - Renderizar SOMENTE se `lead.status === 'novo'`.
+   - Se `lead.parceiroSantander?.status === 'apto'`, mostrar selo verde: "✓ Apto para indicação (Verificado)".
+   - Se não verificado, mostrar caixa com:
+     - Título "🏦 Verificação Parceiro Santander"
+     - Botão 1: "[Copiar CNPJ + Nome]" (Copia: CNPJ \n Nome)
+     - Botão 2: "✓ Apto" -> Chama `onUpdateLead` atualizando `parceiroSantander: { status: 'apto', verificadoEm: new Date().toISOString() }`.
+     - Botão 3: "✗ Bloqueado" -> Abre div/modal inline (bloqueioAtivo).
+   - Div/Modal inline de Bloqueio:
+     - Select com opções: "Já indicado por outro parceiro", "CNPJ inativo/baixado", "CNPJ com restrição", "Sem telefone válido", "Outro".
+     - Se "Outro", mostrar input text livre.
+     - Botão Confirmar: Chama `onUpdateLead` mudando `status: 'descartado'`, `motivoDescarte: 'Parceiro Santander: ' + motivo`, e atualiza o objeto `parceiroSantander`.
+
+3. BLOCO B: FICHA CADASTRAL (Cópia campo a campo)
+   - Renderizar em qualquer status do lead.
+   - Título "📋 Ficha Cadastral (Portal AK)".
+   - Layout em grid com 5 botões de cópia individuais (usar ícone Copy, estilo outline/fantasma, texto pequeno):
+     1. Copiar CNPJ (`lead.cnpj`)
+     2. Copiar Nome (`lead.nome`)
+     3. Copiar Razão Social (`lead.razaoSocial`)
+     4. Copiar Telefone (`lead.telefone`)
+     5. Copiar Endereço Completo (concatenar logradouro, numero, bairro, cidade, uf)
+   - Botão extra no final: "Copiar Tudo (Bloco)" -> Copia os 5 dados, um por linha.
+
+═══════════════════════════════════════════════════════════
+CRITÉRIOS DE ACEITE
+═══════════════════════════════════════════════════════════
+- Compila sem erros TypeScript.
+- Exatamente 2 arquivos modificados.
+- Ao classificar como "Bloqueado", o lead vai imediatamente para a coluna "Descartado" do Kanban preservando os dados.
+- Os botões de cópia funcionam de forma isolada.
