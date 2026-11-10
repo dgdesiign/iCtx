@@ -29,19 +29,6 @@ Muitos empresários do seu setor aí na região da *{empresa}* estão buscando a
 Temos uma solução de Link de Pagamento com possibilidade de custo zero para facilitar suas vendas e agilizar o recebimento. Em poucos passos bem práticos conseguimos checar a viabilidade para a {empresa}. Vale a pena eu te explicar em 1 minutinho como funciona?`,
   },
   {
-    id: 'isencao_novas_empresas',
-    titulo: '💳 Conta PJ Isenta & Estruturação Financeira',
-    etapa: 'contato_1',
-    canal: 'whatsapp',
-    destaque: 'Empresas Recentes',
-    descricao: 'Ideal para negócios que querem evitar cobranças desnecessárias de tarifas.',
-    texto: `Olá {nome}, tudo bem? Parabéns pelo trabalho na *{empresa}*, vi que estão operando há {idade}.
-
-Sou o Douglas Krüger, especialista em abertura de contas para o Banco Santander. Eu auxilio empresas com o perfil da {empresa} a estruturarem sua operação financeira com isenção de tarifas e condições diferenciadas.
-
-A análise é simples, sem burocracia e em poucos passos damos início à nossa parceria. Consegue falar 1 minutinho para vermos as possibilidades para vocês?`,
-  },
-  {
     id: 'proximidade_regional',
     titulo: '📍 Consultor Regional (Proximidade Local)',
     etapa: 'contato_1',
@@ -131,7 +118,7 @@ Quando tiver 1 minutinho livre, me dá um toque por aqui! É sobre aquela consul
     descricao: 'Desarma a cortina de fumaça e reabre a conversa focando em custos.',
     texto: `Compreendo perfeitamente, {nome}! Imagino que a rotina aí na *{empresa}* esteja bem corrida hoje.
 
-Só por curiosidade rápida: vocês já contam com isenção total de tarifas no banco atual de vocês ou o maior gargalo hoje são taxas de maquininhas e cobrança?`,
+Só por curiosidade rápida: vocês já contam com condições diferenciadas de tarifas no banco atual de vocês ou o maior gargalo hoje são taxas de maquininhas e cobrança?`,
   },
   {
     id: 'objecao_ja_tem_banco',

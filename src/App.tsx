@@ -9,7 +9,7 @@ import {
 } from './utils/storage';
 import { mergeLeads3, hashLead, isSampleLeadId } from './utils/syncMerge';
 import { Lead, LeadStatus, MessageTemplate, EquipeMembro } from './types/crm';
-import { ehFollowUpVencido } from './utils/cadencia';
+import { ehFollowUpVencido, calcularProximoFollowUp } from './utils/cadencia';
 import { calcularScore } from './utils/scoring';
 import { Header } from './components/Header';
 import { PipelineKanban, CadenciaFiltro } from './components/PipelineKanban';
@@ -29,6 +29,9 @@ import { ExportImportModal } from './components/ExportImportModal';
 import { InstallAppModal } from './components/InstallAppModal';
 import { GoogleSheetsSyncModal } from './components/GoogleSheetsSyncModal';
 import { NotificationModal } from './components/NotificationModal';
+import { MiningDashboard } from './components/MiningDashboard';
+import { MiningFloatingWidget } from './components/MiningFloatingWidget';
+import { useMiningStatus } from './hooks/useMiningStatus';
 import {
   getNotificationPermissionStatus,
   setupDaily9AmReminder,
@@ -46,7 +49,16 @@ import {
   Database,
   ClipboardPaste,
 } from 'lucide-react';
-import { construirLead, autocorrigeLead } from './services/cnpjService';
+import {
+  construirLead,
+  autocorrigeLead,
+  formatarCnpj,
+  formatarNome,
+  formatarTelefone,
+  limparCnpj,
+  limparDigitos,
+} from './services/cnpjService';
+import { normalizarParaClient } from './types/Client';
 import { User } from 'firebase/auth';
 import {
   googleSignIn,
@@ -139,6 +151,8 @@ export default function App() {
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isSingleLeadOpen, setIsSingleLeadOpen] = useState(false);
+  const [isMiningOpen, setIsMiningOpen] = useState(false);
+  const miningStatus = useMiningStatus();
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isInstallOpen, setIsInstallOpen] = useState(false);
@@ -171,12 +185,27 @@ export default function App() {
   const leadsFiltrados = useMemo(() => {
     return leads.filter((lead) => {
       const textoBusca = busca.toLowerCase().trim();
+      const buscaDigitos = busca.replace(/\D/g, '');
+
+      const telPrincipal = lead.telefonePrincipal || (lead as any).telefone || '';
+      const telSecundario = lead.telefoneSecundario || '';
+      const telPrincipalDigitos = telPrincipal.replace(/\D/g, '');
+      const telSecundarioDigitos = telSecundario.replace(/\D/g, '');
+
+      const matchTelefone = Boolean(
+        (buscaDigitos.length > 0 &&
+          (telPrincipalDigitos.includes(buscaDigitos) || telSecundarioDigitos.includes(buscaDigitos))) ||
+        (textoBusca &&
+          (telPrincipal.toLowerCase().includes(textoBusca) || telSecundario.toLowerCase().includes(textoBusca)))
+      );
+
       const matchBusca =
         !textoBusca ||
         lead.empresaExibicao.toLowerCase().includes(textoBusca) ||
         lead.nomeContato.toLowerCase().includes(textoBusca) ||
         lead.cnpj.includes(textoBusca) ||
-        (lead.municipio || '').toLowerCase().includes(textoBusca);
+        (lead.municipio || '').toLowerCase().includes(textoBusca) ||
+        matchTelefone;
 
       const matchStatus = filtroStatus === 'todos' || lead.status === filtroStatus;
 
@@ -327,8 +356,10 @@ export default function App() {
               listaMerged = merged;
               return merged;
             });
-            await saveAllLeadsToSheet(spreadsheet.id, listaMerged, token);
-            salvarBaseSync(listaMerged);
+            if (listaMerged.length > 0) {
+              await saveAllLeadsToSheet(spreadsheet.id, listaMerged, token);
+              salvarBaseSync(listaMerged);
+            }
             firstMergeDoneRef.current = true;
             const agora = new Date().toISOString();
             setLastSyncTime(agora);
@@ -354,6 +385,7 @@ export default function App() {
   const [leadParaLigacao, setLeadParaLigacao] = useState<Lead | null>(null);
   const [leadParaDetalhes, setLeadParaDetalhes] = useState<Lead | null>(null);
   const [leadParaCoach, setLeadParaCoach] = useState<Lead | null>(null);
+  const [selectedClient, setSelectedClient] = useState<any | null>(null);
 
   // Sincroniza leads no storage local instantâneo
   useEffect(() => {
@@ -630,6 +662,111 @@ export default function App() {
     }
   };
 
+  // Registro centralizado de ação de contato (Sprint 9.1 — WhatsApp / Ligação / Tarja Fantasma)
+  const registrarAcaoContato = (
+    leadId: string,
+    tipo: 'whatsapp' | 'ligacao',
+    templateTitulo?: string
+  ) => {
+    const agoraIso = new Date().toISOString();
+    setLeads((prevLeads) => {
+      const atualizados = prevLeads.map((l) => {
+        if (l.id !== leadId) return l;
+
+        const novoStatus: LeadStatus = l.status === 'novo' ? 'em_prospeccao' : l.status;
+        const proxFollowUp = calcularProximoFollowUp(novoStatus);
+        const novoHistorico = [
+          {
+            id: `contato_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            dataHora: agoraIso,
+            tipo,
+            templateTitulo: templateTitulo || (tipo === 'whatsapp' ? 'WhatsApp Rápido' : 'Ligação'),
+            observacao: 'Ação via CRM',
+          },
+          ...(l.historicoContatos || []),
+        ];
+
+        return {
+          ...l,
+          status: novoStatus,
+          dataUltimoContato: agoraIso,
+          ultimoContatoEm: agoraIso,
+          proximoFollowUp: proxFollowUp || l.proximoFollowUp,
+          tentativasContato: (l.tentativasContato || 0) + 1,
+          cadenciaContatos: ((l.cadenciaContatos ?? 0) < 3 ? (l.cadenciaContatos ?? 0) + 1 : 3) as any,
+          atualizadoEm: agoraIso,
+          historicoContatos: novoHistorico,
+        };
+      });
+
+      salvarLeads(atualizados);
+      return atualizados;
+    });
+
+    if (leadParaDetalhes?.id === leadId) {
+      setLeadParaDetalhes((prev) => {
+        if (!prev) return null;
+        const novoStatus: LeadStatus = prev.status === 'novo' ? 'em_prospeccao' : prev.status;
+        const proxFollowUp = calcularProximoFollowUp(novoStatus);
+        return {
+          ...prev,
+          status: novoStatus,
+          dataUltimoContato: agoraIso,
+          ultimoContatoEm: agoraIso,
+          proximoFollowUp: proxFollowUp || prev.proximoFollowUp,
+          tentativasContato: (prev.tentativasContato || 0) + 1,
+          cadenciaContatos: ((prev.cadenciaContatos ?? 0) < 3 ? (prev.cadenciaContatos ?? 0) + 1 : 3) as any,
+          atualizadoEm: agoraIso,
+          historicoContatos: [
+            {
+              id: `contato_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              dataHora: agoraIso,
+              tipo,
+              templateTitulo: templateTitulo || (tipo === 'whatsapp' ? 'WhatsApp Rápido' : 'Ligação'),
+              observacao: 'Ação via CRM',
+            },
+            ...(prev.historicoContatos || []),
+          ],
+        };
+      });
+    }
+
+    // Auto-save se Google Sheets conectado
+    if (currentUser && spreadsheet?.id && firstMergeDoneRef.current) {
+      executarComRetry(async () => {
+        const token = await getAccessToken();
+        if (!token) throw new Error('TOKEN_EXPIRADO');
+        const leadsAtuais = carregarLeads();
+        await saveAllLeadsToSheet(spreadsheet.id, leadsAtuais, token);
+        salvarBaseSync(leadsAtuais);
+      }).catch((e) => {
+        console.warn('[sync] auto-save pós registrarAcaoContato falhou:', e);
+      });
+    }
+  };
+
+  // Listener para eventos customizados disparados por cards ou componentes filhos
+  useEffect(() => {
+    const handleCustomAcaoContato = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        leadId: string;
+        tipo: 'whatsapp' | 'ligacao';
+        templateTitulo?: string;
+      }>;
+      if (customEvent.detail?.leadId) {
+        registrarAcaoContato(
+          customEvent.detail.leadId,
+          customEvent.detail.tipo || 'whatsapp',
+          customEvent.detail.templateTitulo
+        );
+      }
+    };
+    window.addEventListener('ictx:registrarAcaoContato', handleCustomAcaoContato);
+    return () => {
+      window.removeEventListener('ictx:registrarAcaoContato', handleCustomAcaoContato);
+    };
+  }, [currentUser, spreadsheet?.id]);
+
   const handleConnectGoogle = async () => {
     setIsGoogleSyncing(true);
     isLoadingFromSheetRef.current = true;
@@ -654,11 +791,12 @@ export default function App() {
         return merged;
       });
 
-      await executarComRetry(async () => {
-        await saveAllLeadsToSheet(sheetInfo.id, listaMerged, authResult.accessToken);
-      });
-
-      salvarBaseSync(listaMerged);
+      if (listaMerged.length > 0) {
+        await executarComRetry(async () => {
+          await saveAllLeadsToSheet(sheetInfo.id, listaMerged, authResult.accessToken);
+        });
+        salvarBaseSync(listaMerged);
+      }
       firstMergeDoneRef.current = true;
 
       const agora = new Date().toISOString();
@@ -739,8 +877,10 @@ export default function App() {
           return merged;
         });
 
-        await saveAllLeadsToSheet(sheetId, listaMerged, currentToken);
-        salvarBaseSync(listaMerged);
+        if (listaMerged.length > 0) {
+          await saveAllLeadsToSheet(sheetId, listaMerged, currentToken);
+          salvarBaseSync(listaMerged);
+        }
       });
 
       firstMergeDoneRef.current = true;
@@ -769,6 +909,12 @@ export default function App() {
   };
 
   const handleOpenAtivacao = (lead: Lead) => {
+    setLeadParaMensagem(null);
+    setLeadParaLigacao(null);
+    setSelectedClient(normalizarParaClient(lead));
+  };
+
+  const handleOpenDetails = (lead: Lead) => {
     setLeadParaMensagem(null);
     setLeadParaLigacao(null);
     setLeadParaDetalhes(autocorrigeLead(lead));
@@ -831,6 +977,85 @@ export default function App() {
     setLeads((prev) => [autocorrigeLead(novoLead), ...prev]);
   };
 
+  const handleImportarLeadsMinerados = (leadsRecebidos: any[]) => {
+    if (!leadsRecebidos || leadsRecebidos.length === 0) return;
+
+    const cnpjsExistentes = new Set(leads.map((l) => l.cnpj));
+    const novosFormatados: Lead[] = [];
+    let duplicadosCount = 0;
+
+    for (const raw of leadsRecebidos) {
+      const cnpjLimpo = limparCnpj(raw.cnpj || raw.CNPJ || '');
+      if (!cnpjLimpo || cnpjLimpo.length !== 14) continue;
+
+      if (cnpjsExistentes.has(cnpjLimpo)) {
+        duplicadosCount++;
+        continue;
+      }
+
+      cnpjsExistentes.add(cnpjLimpo);
+
+      const telPrincipal = limparDigitos(raw.telefone || raw.telefonePrincipal || raw.celular || '');
+      const telSecundario = limparDigitos(raw.telefoneSecundario || '');
+      const agora = new Date().toISOString();
+
+      const razao = (raw.razaoSocial || raw.razao_social || raw.nome || raw.empresa || '').trim();
+      const fantasia = (raw.nomeFantasia || raw.nome_fantasia || '').trim();
+      const nomeContato = (raw.nomeContato || raw.contato || raw.nome || '').trim() || 'Contato';
+
+      const novoLead: Lead = {
+        id: `lead_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        cnpj: cnpjLimpo,
+        cnpjFormatado: formatarCnpj(cnpjLimpo),
+        nomeContato: formatarNome(nomeContato),
+        telefonePrincipal: telPrincipal,
+        telefonePrincipalFormatado: formatarTelefone(telPrincipal),
+        telefoneSecundario: telSecundario || undefined,
+        telefoneSecundarioFormatado: telSecundario ? formatarTelefone(telSecundario) : undefined,
+        razaoSocial: formatarNome(razao || 'Empresa'),
+        nomeFantasia: formatarNome(fantasia),
+        empresaExibicao: formatarNome(fantasia || razao || 'Empresa'),
+        empresaParaMensagem: formatarNome(fantasia || 'sua empresa'),
+        municipio: raw.municipio || raw.cidade || '',
+        bairro: raw.bairro || '',
+        cnaeCodigo: raw.cnaeCodigo ? String(raw.cnaeCodigo) : undefined,
+        cnaeDescricao: raw.cnaeDescricao || raw.cnae || '',
+        socios: raw.socios || [],
+        // CRITÉRIO DE ACEITE: Coluna "em_prospeccao" e tag "Apto"
+        status: 'em_prospeccao',
+        parceiroSantander: {
+          status: 'apto',
+          verificadoEm: agora,
+        },
+        produtoSugerido: '💳 Conta PJ Isenta & Cartão',
+        criadoEm: agora,
+        atualizadoEm: agora,
+        historicoContatos: [],
+        cadenciaContatos: 0,
+        produtosAtivos: {
+          conta: false,
+          maquina: false,
+        },
+      };
+
+      novosFormatados.push(autocorrigeLead(novoLead));
+    }
+
+    if (novosFormatados.length === 0) {
+      alert(`Todos os ${leadsRecebidos.length} leads já constam na base do CRM (duplicatas evitadas).`);
+      return;
+    }
+
+    setLeads((prev) => [...novosFormatados, ...prev]);
+    setIsMiningOpen(false);
+
+    const msg = duplicadosCount > 0
+      ? `Sucesso: ${novosFormatados.length} lead(s) adicionados diretamente em "Em Prospecção" com tag Apto! (${duplicadosCount} duplicado(s) ignorado(s))`
+      : `Sucesso: ${novosFormatados.length} lead(s) adicionados diretamente em "Em Prospecção" com tag Apto!`;
+
+    alert(msg);
+  };
+
   const handleSaveTemplates = (novosTemplates: MessageTemplate[]) => {
     setTemplates(novosTemplates);
   };
@@ -839,6 +1064,13 @@ export default function App() {
     const leadsSaneados = backupLeads
       .filter((l) => l && l.id && !isSampleLeadId(l.id))
       .map((l) => autocorrigeLead(l));
+    
+    if (leadsSaneados.length > 0) {
+      salvarLeads(leadsSaneados);
+    }
+    if (backupTemplates && backupTemplates.length > 0) {
+      salvarTemplates(backupTemplates);
+    }
     setLeads(leadsSaneados);
     setTemplates(backupTemplates);
   };
@@ -853,6 +1085,7 @@ export default function App() {
         leads={leads}
         onOpenBulkImport={() => setIsBulkImportOpen(true)}
         onOpenSingleLead={() => setIsSingleLeadOpen(true)}
+        onOpenMining={() => setIsMiningOpen(true)}
         onOpenTemplates={() => setIsTemplatesOpen(true)}
         onExportCsv={() => exportarLeadsCsv(leads)}
         onOpenInstallModal={() => setIsInstallOpen(true)}
@@ -981,10 +1214,11 @@ export default function App() {
           leads={leads}
           onOpenMessageComposer={(lead) => setLeadParaMensagem(autocorrigeLead(lead))}
           onOpenCallScript={(lead) => setLeadParaLigacao(autocorrigeLead(lead))}
-          onOpenDetails={(lead) => setLeadParaDetalhes(autocorrigeLead(lead))}
+          onOpenDetails={handleOpenDetails}
           onOpenAtivacao={handleOpenAtivacao}
           onUpdateStatus={handleUpdateLeadStatus}
           onDeleteLead={handleDeleteLead}
+          onRegistrarAcaoContato={registrarAcaoContato}
           filtroCadencia={filtroCadencia}
           onFiltroCadenciaChange={setFiltroCadencia}
           busca={busca}
@@ -1035,6 +1269,7 @@ export default function App() {
           onUpdateStatus={handleUpdateLeadStatus}
           onUpdateLead={handleUpdateLead}
           onSaveNotas={handleSaveNotas}
+          onRegistrarAcaoContato={registrarAcaoContato}
           onOpenMessageComposer={(lead) => {
             setLeadParaDetalhes(null);
             setLeadParaMensagem(autocorrigeLead(lead));
@@ -1159,6 +1394,29 @@ export default function App() {
           isOpen={true}
           onClose={() => setIsMetasOpen(false)}
           leads={leads}
+        />
+      )}
+
+      {/* Widget Flutuante de Mineração em Segundo Plano (Sprint 11.4) */}
+      {!isMiningOpen &&
+        (miningStatus.status === 'rodando' ||
+          miningStatus.status === 'aguardando' ||
+          miningStatus.processando > 0) && (
+          <MiningFloatingWidget
+            status={miningStatus}
+            onReopen={() => setIsMiningOpen(true)}
+          />
+        )}
+
+      {/* Modal 15: Central de Mineração Integrada (Sprint 10 & 11) */}
+      {isMiningOpen && (
+        <MiningDashboard
+          isOpen={isMiningOpen}
+          onClose={() => setIsMiningOpen(false)}
+          onMinimize={() => setIsMiningOpen(false)}
+          miningStatus={miningStatus}
+          onImportLeads={handleImportarLeadsMinerados}
+          existingCnpjs={existingCnpjs}
         />
       )}
     </div>

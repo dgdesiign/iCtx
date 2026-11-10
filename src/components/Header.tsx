@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FileSpreadsheet,
   Upload,
@@ -13,6 +13,8 @@ import {
   Bell,
   BellRing,
   Target,
+  Pickaxe,
+  Loader2,
 } from 'lucide-react';
 import { Lead } from '../types/crm';
 import { NotificationStatus } from '../services/notificationService';
@@ -21,6 +23,7 @@ interface HeaderProps {
   leads: Lead[];
   onOpenBulkImport: () => void;
   onOpenSingleLead: () => void;
+  onOpenMining?: () => void;
   onOpenTemplates: () => void;
   onExportCsv: () => void;
   onOpenInstallModal: () => void;
@@ -43,6 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
   leads,
   onOpenBulkImport,
   onOpenSingleLead,
+  onOpenMining,
   onOpenTemplates,
   onExportCsv,
   onOpenInstallModal,
@@ -66,6 +70,37 @@ export const Header: React.FC<HeaderProps> = ({
   const emContato = leads.filter((l) =>
     ['contato_1', 'contato_2', 'contato_3'].includes(l.status)
   ).length;
+
+  // Estado da Mineração Autônoma (Sprint 11)
+  const [isMiningJobRunning, setIsMiningJobRunning] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('ictx_mining_job');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return Boolean(parsed.isRunning);
+      }
+    } catch {}
+    return false;
+  });
+
+  useEffect(() => {
+    const handleJobUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent<{ isRunning: boolean }>;
+      if (customEvent.detail && typeof customEvent.detail.isRunning === 'boolean') {
+        setIsMiningJobRunning(customEvent.detail.isRunning);
+      }
+    };
+    window.addEventListener('ictx:miningJobUpdate', handleJobUpdate);
+    return () => window.removeEventListener('ictx:miningJobUpdate', handleJobUpdate);
+  }, []);
+
+  const handleOpenMiningCoverage = () => {
+    localStorage.setItem('ictx_mining_initial_tab', 'cobertura');
+    window.dispatchEvent(new CustomEvent('ictx:openMiningTab', { detail: 'cobertura' }));
+    if (onOpenMining) {
+      onOpenMining();
+    }
+  };
 
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
@@ -195,6 +230,18 @@ export const Header: React.FC<HeaderProps> = ({
               <Upload className="w-4 h-4" />
             </button>
 
+            {/* Mineração Integrada (Sprint 10) */}
+            {onOpenMining && (
+              <button
+                onClick={onOpenMining}
+                className="w-9 h-9 flex items-center justify-center text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl shadow-2xs transition-colors cursor-pointer shrink-0"
+                title="Central de Mineração Integrada (Casa dos Dados / Retorno AK)"
+                aria-label="Mineração de Leads"
+              >
+                <Pickaxe className="w-4 h-4 text-amber-600" />
+              </button>
+            )}
+
             {/* Novo Lead */}
             <button
               onClick={onOpenSingleLead}
@@ -237,6 +284,21 @@ export const Header: React.FC<HeaderProps> = ({
                 aria-label="Supervisor"
               >
                 <BarChart3 className="w-4 h-4 text-indigo-700" />
+              </button>
+            )}
+
+            {/* Indicador de Mineração Autônoma Ativa (Sprint 11) */}
+            {isMiningJobRunning && (
+              <button
+                type="button"
+                onClick={handleOpenMiningCoverage}
+                className="h-9 px-2.5 flex items-center gap-1.5 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-xl shadow-2xs transition-colors cursor-pointer shrink-0 animate-pulse"
+                title="Mineração Autônoma em andamento. Clique para abrir o Painel de Cobertura."
+                aria-label="Mineração em andamento"
+              >
+                <Loader2 className="w-3.5 h-3.5 text-amber-600 animate-spin shrink-0" />
+                <span className="hidden sm:inline">⛏️ Minerando...</span>
+                <span className="sm:hidden">⛏️</span>
               </button>
             )}
 

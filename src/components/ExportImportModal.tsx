@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { X, Download, Upload, FileSpreadsheet, ShieldCheck, Database } from 'lucide-react';
 import { Lead, MessageTemplate } from '../types/crm';
-import { exportarLeadsCsv } from '../utils/storage';
+import { exportarLeadsCsv, importarBackup } from '../utils/storage';
 
 interface ExportImportModalProps {
   isOpen: boolean;
@@ -48,22 +48,23 @@ export const ExportImportModal: React.FC<ExportImportModalProps> = ({
       const reader = new FileReader();
       reader.onload = (event) => {
         try {
-          const parsed = JSON.parse(event.target?.result as string);
-          if (parsed && Array.isArray(parsed.leads)) {
-            if (
-              confirm(
-                `Deseja restaurar ${parsed.leads.length} leads do arquivo de backup? Isso substituirá os dados atuais.`
-              )
-            ) {
-              onRestoreBackup(parsed.leads, parsed.templates || templates);
-              alert('Backup restaurado com sucesso!');
+          const rawText = event.target?.result as string;
+          const { leads: leadsRestaurados, templates: templatesRestaurados, totalFalhas } = importarBackup(rawText);
+          if (leadsRestaurados.length > 0) {
+            const mensagemConfirmacao = totalFalhas > 0
+              ? `Deseja restaurar ${leadsRestaurados.length} leads do arquivo de backup (${totalFalhas} com campos completados por segurança)? Isso atualizará os dados locais.`
+              : `Deseja restaurar ${leadsRestaurados.length} leads do arquivo de backup? Isso atualizará os dados locais.`;
+
+            if (confirm(mensagemConfirmacao)) {
+              onRestoreBackup(leadsRestaurados, templatesRestaurados || templates);
+              alert(`${leadsRestaurados.length} leads restaurados com sucesso!`);
               onClose();
             }
           } else {
-            alert('Arquivo de backup inválido.');
+            alert('Nenhum lead encontrado no arquivo de backup.');
           }
-        } catch {
-          alert('Erro ao processar arquivo JSON.');
+        } catch (err: any) {
+          alert('Erro ao processar arquivo JSON: ' + (err?.message || 'Arquivo inválido.'));
         }
       };
       reader.readAsText(file);

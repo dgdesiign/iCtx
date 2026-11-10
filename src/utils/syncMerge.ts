@@ -135,6 +135,25 @@ export function mergeLeads3(
   remotos: Lead[],
   base: Record<string, string> = {}
 ): MergeResult {
+  // Proteção contra perda de dados (S-RESCUE-DATA):
+  // 1. SE local.length > 0 E remoto.length === 0, NUNCA substituir o local. Retornar local intacto.
+  if (locais.length > 0 && remotos.length === 0) {
+    console.warn("[Sync] Proteção ativada: remoto vazio, local preservado.");
+    const locaisSaneados = locais
+      .filter((l) => l && l.id && !isSampleLeadId(l.id))
+      .map((l) => autocorrigeLead(l));
+    return {
+      merged: locaisSaneados,
+      conflitos: 0,
+    };
+  }
+
+  // 2. SE o remoto tiver menos de 50% dos leads do local, também preservar o local
+  const protecao50 = locais.length > 0 && remotos.length > 0 && remotos.length < locais.length * 0.5;
+  if (protecao50) {
+    console.warn(`[Sync] Proteção ativada: remoto com menos de 50% dos leads locais (${remotos.length} vs ${locais.length}). Preservando dados locais.`);
+  }
+
   let conflitos = 0;
   const baseLimpa = sanitizarBaseSync(base);
 
@@ -177,8 +196,8 @@ export function mergeLeads3(
       // Presente apenas localmente
       resultado.push(leadLocal);
     } else if (leadRemoto) {
-      // Presente apenas remotamente: só inclui se NÃO existia na base limpa
-      if (baseLimpa[chave] === undefined) {
+      // Presente apenas remotamente: só inclui se NÃO existia na base limpa (ou se protecao50 ativa)
+      if (protecao50 || baseLimpa[chave] === undefined) {
         resultado.push(leadRemoto);
       }
     }

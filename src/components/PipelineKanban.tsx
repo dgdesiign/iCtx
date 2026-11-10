@@ -19,6 +19,7 @@ import { ehFollowUpVencido } from '../utils/cadencia';
 import { calcularScore } from '../utils/scoring';
 import { calcularAtivacaoStatus } from '../utils/ativacao';
 import { LeadCard } from './LeadCard';
+import { LeadDetailDrawer } from './LeadDetailDrawer';
 
 export type CadenciaFiltro = 'todos' | 'followup_hoje' | 'score' | 'risco';
 
@@ -73,16 +74,17 @@ interface PipelineKanbanProps {
   leads: Lead[];
   onOpenMessageComposer: (lead: Lead) => void;
   onOpenCallScript: (lead: Lead) => void;
-  onOpenDetails: (lead: Lead) => void;
+  onOpenDetails?: (lead: Lead) => void;
   onUpdateStatus: (leadId: string, status: LeadStatus) => void;
   onDeleteLead?: (leadId: string) => void;
-  onOpenAtivacao?: (lead: Lead) => void;
+  onUpdateLead?: (lead: Lead) => void;
   filtroCadencia: CadenciaFiltro;
   onFiltroCadenciaChange: (filtro: CadenciaFiltro) => void;
   busca: string;
   onBuscaChange: (busca: string) => void;
   filtroStatus: string;
   onFiltroStatusChange: (status: string) => void;
+  [key: string]: any;
 }
 
 export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
@@ -92,7 +94,7 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
   onOpenDetails,
   onUpdateStatus,
   onDeleteLead,
-  onOpenAtivacao,
+  onUpdateLead,
   filtroCadencia,
   onFiltroCadenciaChange,
   busca,
@@ -100,9 +102,20 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
   filtroStatus,
   onFiltroStatusChange,
 }) => {
+  const [leadParaDetalhes, setLeadParaDetalhes] = useState<Lead | null>(null);
   const [modoVisualizacao, setModoVisualizacao] = useState<'kanban' | 'tabela'>('kanban');
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [ordenarPor, setOrdenarPor] = useState<'data' | 'score'>('data');
+
+  const currentLeadDetalhes = leadParaDetalhes
+    ? leads.find((l) => l.id === leadParaDetalhes.id) || leadParaDetalhes
+    : null;
+
+  // Clique no card (qualquer área, exceto ícones) -> abre LeadDetailDrawer (Sniper, Teleprompter, Ficha Cadastral)
+  const handleOpenLeadDetails = (lead: Lead) => {
+    setLeadParaDetalhes(lead);
+    onOpenDetails?.(lead);
+  };
 
   const totalFollowUpsVencidos = leads.filter((l) => ehFollowUpVencido(l)).length;
   const totalLeadsQuentes = leads.filter((l) => calcularScore(l) >= 75).length;
@@ -110,12 +123,27 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
   // Filtragem de leads (Busca por texto + status dropdown + filtro de cadência/score combinados)
   const leadsFiltrados = leads.filter((lead) => {
     const textoBusca = busca.toLowerCase().trim();
+    const buscaDigitos = busca.replace(/\D/g, '');
+
+    const telPrincipal = lead.telefonePrincipal || (lead as any).telefone || '';
+    const telSecundario = lead.telefoneSecundario || '';
+    const telPrincipalDigitos = telPrincipal.replace(/\D/g, '');
+    const telSecundarioDigitos = telSecundario.replace(/\D/g, '');
+
+    const matchTelefone = Boolean(
+      (buscaDigitos.length > 0 &&
+        (telPrincipalDigitos.includes(buscaDigitos) || telSecundarioDigitos.includes(buscaDigitos))) ||
+      (textoBusca &&
+        (telPrincipal.toLowerCase().includes(textoBusca) || telSecundario.toLowerCase().includes(textoBusca)))
+    );
+
     const matchBusca =
       !textoBusca ||
       lead.empresaExibicao.toLowerCase().includes(textoBusca) ||
       lead.nomeContato.toLowerCase().includes(textoBusca) ||
       lead.cnpj.includes(textoBusca) ||
-      (lead.municipio || '').toLowerCase().includes(textoBusca);
+      (lead.municipio || '').toLowerCase().includes(textoBusca) ||
+      matchTelefone;
 
     const matchStatus = filtroStatus === 'todos' || lead.status === filtroStatus;
 
@@ -440,9 +468,8 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
                         lead={lead}
                         onOpenMessageComposer={onOpenMessageComposer}
                         onOpenCallScript={onOpenCallScript}
-                        onOpenDetails={onOpenDetails}
+                        onOpenDetails={handleOpenLeadDetails}
                         onUpdateStatus={onUpdateStatus}
-                        onOpenAtivacao={onOpenAtivacao}
                       />
                     ))
                   )}
@@ -497,7 +524,7 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
                       <tr key={lead.id} className="hover:bg-slate-50/70 transition-colors">
                         <td className="py-2.5 px-4">
                           <button
-                            onClick={() => onOpenDetails(lead)}
+                            onClick={() => handleOpenLeadDetails(lead)}
                             className="font-bold text-slate-900 hover:text-red-700 text-left cursor-pointer"
                           >
                             {lead.empresaExibicao}
@@ -557,6 +584,19 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
             </table>
           </div>
         </div>
+      )}
+
+      {/* Drawer Detalhes do Lead (Sniper, Teleprompter, Ficha Cadastral) */}
+      {currentLeadDetalhes && (
+        <LeadDetailDrawer
+          lead={currentLeadDetalhes}
+          isOpen={Boolean(currentLeadDetalhes)}
+          onClose={() => setLeadParaDetalhes(null)}
+          onUpdateStatus={onUpdateStatus}
+          onUpdateLead={onUpdateLead}
+          onOpenMessageComposer={onOpenMessageComposer}
+          onOpenCallScript={onOpenCallScript}
+        />
       )}
 
     </div>

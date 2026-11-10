@@ -76,15 +76,26 @@ export const KANBAN_COLUMNS: ColumnConfig[] = [
 ];
 
 import { autocorrigeLead } from '../services/cnpjService';
+import { safeParseLead, LeadSchema } from '../schemas/leadSchema';
 
 export function carregarLeads(): Lead[] {
   try {
     const salvo = localStorage.getItem(STORAGE_LEADS_KEY);
     if (salvo) {
       const parsed: Lead[] = JSON.parse(salvo);
-      if (Array.isArray(parsed)) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
         // Autocorrige leads que possam ter dados invertidos de versões anteriores
         return parsed.map((lead) => autocorrigeLead(lead));
+      }
+    }
+
+    // Resgate de segurança: se santander_leads_v2 estiver vazio, tenta resgatar do ictx-storage (Zustand)
+    const zustandSalvo = localStorage.getItem('ictx-storage');
+    if (zustandSalvo) {
+      const parsedZ = JSON.parse(zustandSalvo);
+      if (parsedZ?.state?.leads && Array.isArray(parsedZ.state.leads) && parsedZ.state.leads.length > 0) {
+        console.warn(`[Rescue] Recuperados ${parsedZ.state.leads.length} leads do storage Zustand.`);
+        return parsedZ.state.leads.map((l: any) => autocorrigeLead(l));
       }
     }
   } catch (err) {
@@ -95,10 +106,93 @@ export function carregarLeads(): Lead[] {
 
 export function salvarLeads(leads: Lead[]): void {
   try {
+    if (leads.length === 0) {
+      // Proteção de integridade: se já existiam leads salvos, nunca zera silenciosamente sem confirmação explícita
+      const existente = localStorage.getItem(STORAGE_LEADS_KEY);
+      if (existente) {
+        try {
+          const parsed = JSON.parse(existente);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            console.warn('[Safety] Ignorando tentativa de salvar lista vazia por cima de dados existentes.');
+            return;
+          }
+        } catch {
+          // ignora
+        }
+      }
+    }
     localStorage.setItem(STORAGE_LEADS_KEY, JSON.stringify(leads));
   } catch (err) {
     console.error('Erro ao salvar leads no storage:', err);
   }
+}
+
+export interface BackupImportResult {
+  leads: Lead[];
+  templates: MessageTemplate[];
+  totalImportados: number;
+  totalFalhas: number;
+}
+
+/**
+ * Importa e restaura backup JSON de leads e templates de forma resiliente.
+ * Usa LeadSchema.safeParse(). Se falhar em qualquer lead, NÃO cancela o lote:
+ * preenche campos faltantes com fallbacks seguros e importa o lead mesmo assim.
+ */
+export function importarBackup(conteudo: string | any): BackupImportResult {
+  let parsedJson: any;
+  if (typeof conteudo === 'string') {
+    try {
+      parsedJson = JSON.parse(conteudo);
+    } catch {
+      throw new Error('Arquivo JSON inválido.');
+    }
+  } else {
+    parsedJson = conteudo;
+  }
+
+  if (!parsedJson || typeof parsedJson !== 'object') {
+    throw new Error('Conteúdo do backup não é um objeto válido.');
+  }
+
+  const rawLeads: any[] = Array.isArray(parsedJson)
+    ? parsedJson
+    : Array.isArray(parsedJson.leads)
+    ? parsedJson.leads
+    : [];
+
+  const rawTemplates: MessageTemplate[] = Array.isArray(parsedJson.templates)
+    ? parsedJson.templates
+    : [];
+
+  let totalFalhas = 0;
+  const leadsRecuperados: Lead[] = [];
+
+  for (const rawItem of rawLeads) {
+    if (!rawItem || typeof rawItem !== 'object') continue;
+    try {
+      const parseResult = LeadSchema.safeParse(rawItem);
+      if (parseResult.success) {
+        leadsRecuperados.push(autocorrigeLead(parseResult.data as Lead));
+      } else {
+        totalFalhas++;
+        // Preenche campos faltantes com fallbacks seguros (id = crypto.randomUUID(), status = 'novo')
+        const leadComFallback = safeParseLead(rawItem);
+        leadsRecuperados.push(autocorrigeLead(leadComFallback as Lead));
+      }
+    } catch {
+      totalFalhas++;
+      const leadComFallback = safeParseLead(rawItem);
+      leadsRecuperados.push(autocorrigeLead(leadComFallback as Lead));
+    }
+  }
+
+  return {
+    leads: leadsRecuperados,
+    templates: rawTemplates.length > 0 ? rawTemplates : carregarTemplates(),
+    totalImportados: leadsRecuperados.length,
+    totalFalhas,
+  };
 }
 
 import { calcularProximoFollowUp } from './cadencia';

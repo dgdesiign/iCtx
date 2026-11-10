@@ -20,6 +20,7 @@ import {
 import { Lead, LeadStatus, MessageTemplate, TemplateEtapa } from '../types/crm';
 import { gerarLinkWhatsApp, preencherVariaveisMensagem } from '../utils/storage';
 import { autocorrigeLead } from '../services/cnpjService';
+import { quebrarEmBlocos, limparTextoHumano } from './LeadDetailDrawer';
 
 interface MessageComposerModalProps {
   lead: Lead | null;
@@ -28,6 +29,7 @@ interface MessageComposerModalProps {
   onClose: () => void;
   onUpdateLeadStatus: (leadId: string, novoStatus: LeadStatus, logInfo?: { tipo: 'whatsapp'; templateTitulo: string; mensagem: string }) => void;
   onOpenDetails?: (lead: Lead) => void;
+  onRegistrarAcaoContato?: (leadId: string, tipo: 'whatsapp' | 'ligacao', templateTitulo?: string) => void;
 }
 
 function sugerirProximaEtapa(statusAtual?: LeadStatus): LeadStatus {
@@ -47,13 +49,22 @@ function sugerirProximaEtapa(statusAtual?: LeadStatus): LeadStatus {
 
 export const MessageComposerModal: React.FC<MessageComposerModalProps> = ({
   lead: rawLead,
-  templates,
+  templates: rawTemplates,
   isOpen,
   onClose,
   onUpdateLeadStatus,
   onOpenDetails,
+  onRegistrarAcaoContato,
 }) => {
   const lead = rawLead ? autocorrigeLead(rawLead) : null;
+
+  // Sanitização anti-spam: remove qualquer template banido pelo WhatsApp (Conta Isenta / isenção total)
+  const templates = (rawTemplates || []).filter(
+    (t) =>
+      !t.titulo.toLowerCase().includes('conta isenta') &&
+      !t.titulo.toLowerCase().includes('conta pj isenta') &&
+      !t.texto.toLowerCase().includes('isenção total')
+  );
 
   // Categoria de filtro de templates - inicia em 'todas' para acesso livre a todo o repertório
   const [categoriaAtiva, setCategoriaAtiva] = useState<TemplateEtapa | 'todas'>('todas');
@@ -61,6 +72,8 @@ export const MessageComposerModal: React.FC<MessageComposerModalProps> = ({
   const [textoMensagem, setTextoMensagem] = useState<string>('');
   const [telefoneDestino, setTelefoneDestino] = useState<'principal' | 'secundario'>('principal');
   const [copiado, setCopiado] = useState(false);
+  const [blocoCopiadoIndex, setBlocoCopiadoIndex] = useState<number | null>(null);
+  const [modoVisualizacao, setModoVisualizacao] = useState<'blocos' | 'editor'>('blocos');
   const [proximaEtapa, setProximaEtapa] = useState<LeadStatus>('contato_1');
 
   // Inicializa o template quando o modal abre ou o lead muda
@@ -90,6 +103,23 @@ export const MessageComposerModal: React.FC<MessageComposerModalProps> = ({
     setTelefoneDestino('principal');
   }, [lead?.id, templates, isOpen]);
 
+  // Registra automaticamente início de contato ao abrir o modal de disparo
+  useEffect(() => {
+    if (isOpen && lead) {
+      const tpl = templates.find((t) => t.id === templateSelecionadoId) || templates[0];
+      const titulo = tpl?.titulo || 'WhatsApp Rápido';
+      if (onRegistrarAcaoContato) {
+        onRegistrarAcaoContato(lead.id, 'whatsapp', titulo);
+      } else {
+        window.dispatchEvent(
+          new CustomEvent('ictx:registrarAcaoContato', {
+            detail: { leadId: lead.id, tipo: 'whatsapp', templateTitulo: titulo },
+          })
+        );
+      }
+    }
+  }, [isOpen, lead?.id]);
+
   if (!isOpen || !lead) return null;
 
   // Atualiza o texto quando muda o template
@@ -118,14 +148,12 @@ export const MessageComposerModal: React.FC<MessageComposerModalProps> = ({
       ? lead.telefonePrincipal
       : lead.telefoneSecundario || lead.telefonePrincipal;
 
-  const linkWhatsapp = gerarLinkWhatsApp(numeroFinal, textoMensagem);
+  const telLimpoDestino = (numeroFinal || '').replace(/\D/g, '');
+  const linkWhatsappVazio = `https://wa.me/55${telLimpoDestino}`;
 
   const handleDispararWhatsApp = (avancarStatus = true) => {
     const tplAtual = templates.find((t) => t.id === templateSelecionadoId);
     
-    // Abre WhatsApp Web / Mobile
-    window.open(linkWhatsapp, '_blank');
-
     // Atualiza status se selecionado
     if (avancarStatus && proximaEtapa !== lead.status) {
       onUpdateLeadStatus(lead.id, proximaEtapa, {
@@ -138,7 +166,7 @@ export const MessageComposerModal: React.FC<MessageComposerModalProps> = ({
     onClose();
   };
 
-  // Filtragem de templates para exibição livre
+  // Filtragem de templates para exibição livre (sem os banidos)
   const templatesFiltrados = templates.filter((t) => {
     if (categoriaAtiva === 'todas') return true;
     return t.etapa === categoriaAtiva;
@@ -337,72 +365,158 @@ export const MessageComposerModal: React.FC<MessageComposerModalProps> = ({
           </div>
 
           {/* Right Column: Live Message Preview & Customization (7 cols) */}
-          <div className="md:col-span-7 p-4 flex flex-col justify-between overflow-y-auto">
-            <div>
-              <div className="flex items-center justify-between mb-2">
+          <div className="md:col-span-7 p-4 flex flex-col justify-between overflow-y-auto space-y-3">
+            <div className="space-y-3">
+              {/* Botão Grande 1: Abrir Conversa no WhatsApp (link sem texto na URL) */}
+              <a
+                href={linkWhatsappVazio}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => {
+                  if (onRegistrarAcaoContato) {
+                    onRegistrarAcaoContato(lead.id, 'whatsapp', templateAtual?.titulo || 'WhatsApp Rápido');
+                  }
+                }}
+                className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm text-sm transition-all cursor-pointer"
+                title="1. Abrir Conversa no WhatsApp (conversa limpa)"
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>1. Abrir Conversa no WhatsApp</span>
+                <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+              </a>
+
+              {/* Instrução visual anti-spam */}
+              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-xs flex items-center gap-2 shadow-2xs">
+                <span className="text-base">💡</span>
+                <span className="font-medium">
+                  Clique em abrir o WhatsApp, depois copie e cole os blocos um a um.
+                </span>
+              </div>
+
+              {/* Header com Toggle Blocos x Editor */}
+              <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                  <span>2. Texto Personalizado (Pronto para o WhatsApp):</span>
+                  <span>2. {modoVisualizacao === 'blocos' ? 'Blocos Humanizados:' : 'Editor de Texto:'}</span>
                 </label>
-                <button
-                  type="button"
-                  onClick={handleCopiar}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
-                >
-                  {copiado ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-600" />
-                      <span className="text-emerald-600 font-semibold">Copiado!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Copiar texto</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {/* Dynamic Variables Toolbelt */}
-              <div className="mb-2 flex items-center gap-1.5 flex-wrap">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold">Inserir:</span>
-                {[
-                  { label: '+ Nome', tag: '{nome}' },
-                  { label: '+ Empresa', tag: '{empresa}' },
-                  { label: '+ Cidade', tag: '{cidade}' },
-                  { label: '+ Idade', tag: '{idade}' },
-                  { label: '+ Sócio', tag: '{socio}' },
-                ].map((item) => (
+                <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-xs">
                   <button
-                    key={item.tag}
                     type="button"
-                    onClick={() => handleInserirVariavel(item.tag)}
-                    className="text-[11px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded border border-slate-200 transition-colors cursor-pointer"
+                    onClick={() => setModoVisualizacao('blocos')}
+                    className={`px-2.5 py-1 rounded-md font-semibold transition-colors cursor-pointer ${
+                      modoVisualizacao === 'blocos'
+                        ? 'bg-white text-emerald-800 shadow-2xs font-bold'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
                   >
-                    {item.label}
+                    Blocos
                   </button>
-                ))}
-              </div>
-
-              {/* Editable Textarea formatted like a WhatsApp bubble */}
-              <div className="relative rounded-xl border border-slate-300 focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-600/20 bg-[#efeae2]/30 p-2.5">
-                <textarea
-                  rows={8}
-                  value={textoMensagem}
-                  onChange={(e) => setTextoMensagem(e.target.value)}
-                  className="w-full bg-transparent text-sm text-slate-800 placeholder-slate-400 focus:outline-none resize-y leading-relaxed font-sans"
-                  placeholder="Escreva ou selecione a mensagem..."
-                />
-                <div className="flex justify-between items-center pt-2 text-[11px] text-slate-400 border-t border-slate-200/60">
-                  <span>Template ativo: <strong>{templateAtual?.titulo || 'Personalizado'}</strong></span>
-                  <span>{textoMensagem.length} caracteres</span>
+                  <button
+                    type="button"
+                    onClick={() => setModoVisualizacao('editor')}
+                    className={`px-2.5 py-1 rounded-md font-semibold transition-colors cursor-pointer ${
+                      modoVisualizacao === 'editor'
+                        ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    Editar
+                  </button>
                 </div>
               </div>
+
+              {modoVisualizacao === 'blocos' ? (
+                /* Lista de Blocos Numerados com Copiar Individual */
+                <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+                  {quebrarEmBlocos(textoMensagem).map((blocoRaw, idx) => {
+                    const bloco = limparTextoHumano(blocoRaw);
+                    const isCopiado = blocoCopiadoIndex === idx;
+
+                    return (
+                      <div
+                        key={idx}
+                        className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs space-y-1.5 hover:border-slate-300 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                            <span className="w-4 h-4 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center text-[10px] font-bold font-mono">
+                              {idx + 1}
+                            </span>
+                            <span>Bloco {idx + 1}</span>
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(bloco);
+                              setBlocoCopiadoIndex(idx);
+                              setTimeout(() => setBlocoCopiadoIndex(null), 2000);
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs ${
+                              isCopiado
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                            }`}
+                            title={`Copiar Bloco ${idx + 1}`}
+                          >
+                            {isCopiado ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5 text-slate-500" />
+                            )}
+                            <span>{isCopiado ? 'Copiado!' : 'Copiar'}</span>
+                          </button>
+                        </div>
+
+                        <p className="text-xs text-slate-800 leading-relaxed font-sans bg-slate-50/80 p-2.5 rounded-lg border border-slate-100 select-all">
+                          {bloco}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* Modo Editor Livre com Variáveis Dinâmicas */
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Inserir:</span>
+                    {[
+                      { label: '+ Nome', tag: '{nome}' },
+                      { label: '+ Empresa', tag: '{empresa}' },
+                      { label: '+ Cidade', tag: '{cidade}' },
+                      { label: '+ Idade', tag: '{idade}' },
+                      { label: '+ Sócio', tag: '{socio}' },
+                    ].map((item) => (
+                      <button
+                        key={item.tag}
+                        type="button"
+                        onClick={() => handleInserirVariavel(item.tag)}
+                        className="text-[11px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded border border-slate-200 transition-colors cursor-pointer"
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="relative rounded-xl border border-slate-300 focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-600/20 bg-[#efeae2]/30 p-2.5">
+                    <textarea
+                      rows={6}
+                      value={textoMensagem}
+                      onChange={(e) => setTextoMensagem(e.target.value)}
+                      className="w-full bg-transparent text-sm text-slate-800 placeholder-slate-400 focus:outline-none resize-y leading-relaxed font-sans"
+                      placeholder="Escreva ou selecione a mensagem..."
+                    />
+                    <div className="flex justify-between items-center pt-2 text-[11px] text-slate-400 border-t border-slate-200/60">
+                      <span>Template ativo: <strong>{templateAtual?.titulo || 'Personalizado'}</strong></span>
+                      <span>{textoMensagem.length} caracteres</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Bottom Controls: Stage transition & Action buttons */}
             <div className="mt-4 pt-3 border-t border-slate-200 space-y-3">
-              
               {/* Stage Transition Selector */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
                 <div className="flex items-center gap-1.5 text-slate-700">
@@ -439,10 +553,9 @@ export const MessageComposerModal: React.FC<MessageComposerModalProps> = ({
                     type="button"
                     onClick={() => handleDispararWhatsApp(false)}
                     className="px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
-                    title="Abre o WhatsApp sem alterar a coluna no funil"
+                    title="Conclui sem alterar a coluna no funil"
                   >
-                    <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Enviar sem Mover</span>
+                    <span>Concluir sem Mover</span>
                   </button>
                 </div>
 
@@ -451,11 +564,10 @@ export const MessageComposerModal: React.FC<MessageComposerModalProps> = ({
                   onClick={() => handleDispararWhatsApp(true)}
                   className="px-4 sm:px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer order-1 sm:order-2"
                 >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Disparar WhatsApp & Avançar</span>
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Concluir Envio & Avançar Status</span>
                 </button>
               </div>
-
             </div>
 
           </div>

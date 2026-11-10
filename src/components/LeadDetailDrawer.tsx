@@ -27,6 +27,10 @@ import {
   RefreshCw,
   ArrowLeft,
   ShieldAlert,
+  Link2,
+  Landmark,
+  Check,
+  ExternalLink,
 } from 'lucide-react';
 import { Lead, LeadStatus } from '../types/crm';
 import { CredenciamentoWizardModal } from './CredenciamentoWizardModal';
@@ -48,8 +52,35 @@ import {
   corrigirDataAtivacaoConta,
   corrigirDataAtivacaoMaquina,
   definirFitEnergia,
-  dataLocalISO
+  dataLocalISO,
+  somarDiasLocal
 } from '../utils/ativacao';
+
+/** Divide mensagem em blocos de parágrafos para envio humanizado anti-spam */
+export function quebrarEmBlocos(texto: string): string[] {
+  if (!texto) return [];
+  const pedacos = texto
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+
+  if (pedacos.length === 1 && texto.includes('\n')) {
+    return texto
+      .split('\n')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+  }
+
+  return pedacos.length > 0 ? pedacos : [texto.trim()];
+}
+
+/** Remove marcações de formatação pesada (* e _) para soar 100% humano */
+export function limparTextoHumano(bloco: string): string {
+  return bloco
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+    .trim();
+}
 
 // Templates Sniper para Grid de Tiles (1 Clique)
 interface TemplateSniper {
@@ -108,17 +139,6 @@ const TEMPLATES_SNIPER: TemplateSniper[] = [
     corIcone: 'text-purple-700',
     icone: 'CheckCircle2',
     texto: `Perfeito {nome}! Vamos avançar com o credenciamento e ativação da conta da *{empresa}*.\n\nO processo é 100% digital e rápido. Me confirma apenas se o CNPJ continua 100% regular para darmos o start?`,
-  },
-  {
-    id: 'tarifa_zero',
-    titulo: 'Conta Isenta',
-    subtitulo: 'Isenção tarifas PJ',
-    tag: 'Tarifa Zero',
-    corEstilo: 'bg-teal-50/70 hover:bg-teal-100/80 border-teal-200 text-teal-950',
-    corIconeBg: 'bg-teal-100 text-teal-700',
-    corIcone: 'text-teal-700',
-    icone: 'Building2',
-    texto: `Olá {nome}, tudo bem? Parabéns pelo trabalho na *{empresa}*!\n\nSou o Douglas Krüger, especialista em abertura de contas PJ para o Santander. Auxilio empresas com o perfil da {empresa} a estruturarem sua operação financeira com isenção de tarifas e condições diferenciadas. Consegue falar 1 minutinho?`,
   },
   {
     id: 'regional',
@@ -272,6 +292,7 @@ interface LeadDetailDrawerProps {
   onOpenMessageComposer?: (lead: Lead) => void;
   onOpenCallScript?: (lead: Lead) => void;
   onOpenCoach?: (lead: Lead) => void;
+  onRegistrarAcaoContato?: (leadId: string, tipo: 'whatsapp' | 'ligacao', templateTitulo?: string) => void;
 }
 
 export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
@@ -284,6 +305,7 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
   onOpenMessageComposer = () => {},
   onOpenCallScript = () => {},
   onOpenCoach = () => {},
+  onRegistrarAcaoContato,
 }) => {
   const [notas, setNotas] = useState(lead?.notas || '');
   const [salvo, setSalvo] = useState(false);
@@ -293,15 +315,55 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
   const [editEmpresa, setEditEmpresa] = useState(lead?.empresaExibicao || '');
   const [wizardAberto, setWizardAberto] = useState(false);
 
+  // Snooze / Lembrete Rápido (Sprint 9.1 — Manter Lead Quente)
+  const handleSnooze = (dias: number) => {
+    if (!lead) return;
+    const agoraIso = new Date().toISOString();
+    const dataFutura = somarDiasLocal(dias);
+    const novoHistorico = [
+      {
+        id: `snooze_${Date.now()}`,
+        dataHora: agoraIso,
+        tipo: 'nota' as const,
+        templateTitulo: `Lembrete Rápido (+${dias}d)`,
+        observacao: `Snooze agendado para daqui a ${dias} dia(s) (${dataFutura})`,
+      },
+      ...(lead.historicoContatos || []),
+    ];
+    if (onUpdateLead) {
+      onUpdateLead({
+        ...lead,
+        proximoFollowUp: dataFutura,
+        dataUltimoContato: agoraIso,
+        atualizadoEm: agoraIso,
+        historicoContatos: novoHistorico,
+      });
+    }
+    setToastMsg(`Lembrete adiado para daqui a ${dias} dia(s)!`);
+    setTimeout(() => setToastMsg(null), 2500);
+  };
+
   // Estados para Verificação Parceiro Santander (Sprint R8)
   const [bloqueioAtivo, setBloqueioAtivo] = useState(false);
   const [motivoBloqueio, setMotivoBloqueio] = useState('Já indicado por outro parceiro');
   const [motivoOutro, setMotivoOutro] = useState('');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
-  // Abas de Gestão de Contato Rápido (WhatsApp / Ligação / Dossiê)
-  const [tabAtiva, setTabAtiva] = useState<'whatsapp' | 'ligacao' | 'dossie'>('whatsapp');
+  // Abas de Gestão de Contato Rápido (WhatsApp / Ligação / Dossiê / Pós-Venda)
+  const [tabAtiva, setTabAtiva] = useState<'whatsapp' | 'ligacao' | 'dossie' | 'pos_venda'>('whatsapp');
   const [roteiroSelecionadoId, setRoteiroSelecionadoId] = useState<string | null>(null);
+  const [templateBlocosAtivo, setTemplateBlocosAtivo] = useState<TemplateSniper | null>(null);
+  const [blocoCopiadoIndex, setBlocoCopiadoIndex] = useState<number | null>(null);
+
+  // Estados Pós-Venda (aba condicional para status === 'fechado')
+  const [faturamentoInput, setFaturamentoInput] = useState<string>('');
+  const [cnaeElegivelState, setCnaeElegivelState] = useState<boolean>(true);
+  const [statusContaPJState, setStatusContaPJState] = useState<string>('Não Iniciada');
+  const [modeloPOSState, setModeloPOSState] = useState<string>('POS 3G');
+  const [statusPedidoPOSState, setStatusPedidoPOSState] = useState<string>('Não Solicitado');
+  const [completudeCadastralState, setCompletudeCadastralState] = useState<boolean>(false);
+  const [salvoPosVenda, setSalvoPosVenda] = useState<boolean>(false);
+  const [copiadoLinkSantander, setCopiadoLinkSantander] = useState<boolean>(false);
 
   useEffect(() => {
     if (lead) {
@@ -314,8 +376,25 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
       setMotivoBloqueio('Já indicado por outro parceiro');
       setMotivoOutro('');
       setRoteiroSelecionadoId(null);
+      setTemplateBlocosAtivo(null);
+      setBlocoCopiadoIndex(null);
+
+      // Sincronização de campos de Pós-Venda
+      const faturamento = (lead as any).faturamentoMensal ?? (lead as any).faturamentoEstimado ?? '';
+      setFaturamentoInput(faturamento !== '' ? String(faturamento) : '');
+      setCnaeElegivelState(!lead.isMei || Boolean(lead.isMeiDesenquadrado));
+      setStatusContaPJState((lead as any).statusContaPJ || 'Não Iniciada');
+      setModeloPOSState((lead as any).modeloEquipamento || 'POS 3G');
+      setStatusPedidoPOSState((lead as any).statusPedidoPOS || 'Não Solicitado');
+      setCompletudeCadastralState(Boolean((lead as any).completudeCadastral));
     }
   }, [lead?.id]);
+
+  useEffect(() => {
+    if (lead && lead.status !== 'fechado' && tabAtiva === 'pos_venda') {
+      setTabAtiva('whatsapp');
+    }
+  }, [lead?.status, tabAtiva]);
 
   useEffect(() => {
     if (!lead || !isOpen) return;
@@ -359,9 +438,43 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
   };
 
   const handleSalvarNotas = () => {
-    onSaveNotas(lead.id, notas);
+    if (!notas.trim()) return;
+    const agoraIso = new Date().toISOString();
+    const novoStatus: LeadStatus = lead.status === 'novo' ? 'em_prospeccao' : lead.status;
+    const textoNota = notas.trim();
+    const novoHistorico = [
+      {
+        id: `nota_${Date.now()}`,
+        dataHora: agoraIso,
+        tipo: 'nota' as const,
+        templateTitulo: 'Nota do Vendedor',
+        observacao: textoNota,
+      },
+      ...(lead.historicoContatos || []),
+    ];
+
+    if (onUpdateLead) {
+      onUpdateLead({
+        ...lead,
+        notas: textoNota,
+        status: novoStatus,
+        dataUltimoContato: agoraIso,
+        ultimoContatoEm: agoraIso,
+        atualizadoEm: agoraIso,
+        historicoContatos: novoHistorico,
+      });
+    }
+    onSaveNotas(lead.id, textoNota);
+    if (lead.status === 'novo') {
+      onUpdateStatus(lead.id, 'em_prospeccao');
+    }
+    setNotas('');
     setSalvo(true);
-    setTimeout(() => setSalvo(false), 2000);
+    setToastMsg('Nota salva! Follow-up atualizado.');
+    setTimeout(() => {
+      setSalvo(false);
+      setToastMsg(null);
+    }, 2500);
   };
 
   const handleCopy = (text: string, label: string) => {
@@ -425,6 +538,13 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
   };
 
   const roteiroSelecionado = ROTEIROS_LIGACAO.find((r) => r.id === roteiroSelecionadoId);
+
+  const j = janelaCheia(lead);
+  const statusAtivacao = calcularAtivacaoStatus(lead);
+  const pixQtd = lead.pixCount ?? 0;
+  const maquinaVol = lead.maquinaVendas ?? 0;
+  const faturamentoNum = Number(faturamentoInput) || 0;
+  const isFaturamentoAcima60k = faturamentoNum >= 60000;
 
   const telLimpo = (
     lead.telefonePrincipal ||
@@ -504,6 +624,41 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
           )}
         </div>
 
+        {/* Barra de Snooze / Lembrete Rápido (Sprint 9.1 — Manter Lead Quente) */}
+        <div className="px-5 py-2 bg-amber-50/80 border-b border-amber-200/70 flex items-center justify-between gap-2 flex-shrink-0 text-xs">
+          <div className="flex items-center gap-1.5 text-amber-950 font-bold shrink-0">
+            <Clock className="w-3.5 h-3.5 text-amber-700" />
+            <span className="hidden sm:inline">Manter Lead Quente:</span>
+            <span className="sm:hidden">Snooze:</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => handleSnooze(1)}
+              className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs transition-colors cursor-pointer shadow-2xs"
+              title="Adiar follow-up para amanhã (+1 dia) e atualizar último contato"
+            >
+              ⏳ +1 dia
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSnooze(3)}
+              className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs transition-colors cursor-pointer shadow-2xs"
+              title="Adiar follow-up para daqui a 3 dias e atualizar último contato"
+            >
+              ⏳ +3 dias
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSnooze(7)}
+              className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs transition-colors cursor-pointer shadow-2xs"
+              title="Adiar follow-up para daqui a 7 dias e atualizar último contato"
+            >
+              ⏳ +7 dias
+            </button>
+          </div>
+        </div>
+
         {/* ABAS (1 Clique para decidir a ação) */}
         <div className="flex border-b bg-white flex-shrink-0">
           <button
@@ -542,87 +697,208 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
             <Building2 size={16} />
             <span>Dossiê da Empresa</span>
           </button>
+          {lead.status === 'fechado' && (
+            <button
+              type="button"
+              onClick={() => setTabAtiva('pos_venda')}
+              className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 sm:gap-2 border-b-2 transition-colors cursor-pointer ${
+                tabAtiva === 'pos_venda'
+                  ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
+                  : 'border-transparent text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              <ShieldCheck size={16} />
+              <span>Pós-Venda</span>
+            </button>
+          )}
         </div>
 
         {/* ÁREA DE CONTEÚDO */}
         <div className="p-4 sm:p-5 overflow-y-auto flex-1 bg-slate-50 text-xs text-slate-700">
-          {/* ABA 1: DISPARO SNIPER WHATSAPP (1 CLIQUE) */}
+          {/* ABA 1: DISPARO SNIPER WHATSAPP EM BLOCOS (ANTI-SPAM) */}
           {tabAtiva === 'whatsapp' && (
             <div className="flex flex-col h-full animate-in fade-in duration-200">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                    <MessageCircle size={15} className="text-emerald-600" />
-                    Gatilhos Sniper (1 Clique)
-                  </h3>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Clique no bloco desejado para abrir diretamente no WhatsApp com os dados do lead preenchidos.
-                  </p>
-                </div>
-                {telLimpo.length < 10 && (
-                  <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded font-semibold">
-                    Sem WhatsApp válido
-                  </span>
-                )}
-              </div>
-
-              {/* LISTA VERTICAL COMPACTA SLIM UI (SEM SUBTÍTULOS) */}
-              <div className="flex flex-col gap-1.5">
-                {TEMPLATES_SNIPER.map((tpl) => {
-                  const textoCustomizado = interpolar(tpl.texto);
-                  const waUrl =
-                    telLimpo.length >= 10
-                      ? `https://wa.me/55${telLimpo}?text=${encodeURIComponent(textoCustomizado)}`
-                      : '#';
-
-                  return (
-                    <a
-                      key={tpl.id}
-                      href={waUrl}
-                      target={telLimpo.length >= 10 ? '_blank' : undefined}
-                      rel={telLimpo.length >= 10 ? 'noopener noreferrer' : undefined}
-                      onClick={(e) => {
-                        if (telLimpo.length < 10) {
-                          e.preventDefault();
-                          setToastMsg('Lead sem número de WhatsApp válido.');
-                          setTimeout(() => setToastMsg(null), 2500);
-                          return;
-                        }
-                        if (onUpdateStatus) {
-                          onUpdateStatus(lead.id, lead.status === 'novo' ? 'em_prospeccao' : lead.status);
-                        }
-                        setToastMsg(`Disparando "${tpl.titulo}" no WhatsApp...`);
-                        setTimeout(() => setToastMsg(null), 2500);
-                      }}
-                      className="w-full flex items-center gap-3 p-2.5 bg-white hover:bg-slate-50 border border-slate-200 rounded text-slate-700 text-sm transition-colors text-left group cursor-pointer"
-                      title={`Enviar "${tpl.titulo}" via WhatsApp`}
-                    >
-                      <div className="text-slate-500 group-hover:text-emerald-600 transition-colors shrink-0">
-                        {tpl.icone === 'MessageCircle' && <MessageCircle size={16} />}
-                        {tpl.icone === 'RefreshCw' && <RefreshCw size={16} />}
-                        {tpl.icone === 'CreditCard' && <CreditCard size={16} />}
-                        {tpl.icone === 'CheckCircle2' && <CheckCircle2 size={16} />}
-                        {tpl.icone === 'Building2' && <Building2 size={16} />}
-                        {tpl.icone === 'MapPin' && <MapPin size={16} />}
-                      </div>
-                      <span className="font-medium text-slate-800 flex-1 truncate">
-                        {tpl.titulo}
+              {!templateBlocosAtivo ? (
+                <>
+                  <div className="mb-4 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                        <MessageCircle size={15} className="text-emerald-600" />
+                        Gatilhos Sniper (Envio em Blocos)
+                      </h3>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Selecione a abordagem para disparar em blocos humanizados (anti-bloqueio).
+                      </p>
+                    </div>
+                    {telLimpo.length < 10 && (
+                      <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded font-semibold">
+                        Sem WhatsApp válido
                       </span>
-                    </a>
-                  );
-                })}
-              </div>
+                    )}
+                  </div>
 
-              {/* DICA / RODAPÉ */}
-              <div className="mt-4 p-3 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
-                  Variáveis como <strong>{lead.nomeContato?.split(' ')[0] || 'Nome'}</strong> e <strong>{lead.empresaExibicao || 'Empresa'}</strong> são inseridas automaticamente.
-                </span>
-                <span className="font-mono text-slate-600 font-semibold">
-                  {telLimpo ? `+55 ${telLimpo}` : 'Telefone não cadastrado'}
-                </span>
-              </div>
+                  {/* LISTA VERTICAL COMPACTA SLIM UI */}
+                  <div className="flex flex-col gap-1.5">
+                    {TEMPLATES_SNIPER.map((tpl) => (
+                      <button
+                        key={tpl.id}
+                        type="button"
+                        onClick={() => {
+                          if (telLimpo.length < 10) {
+                            setToastMsg('Lead sem número de WhatsApp válido.');
+                            setTimeout(() => setToastMsg(null), 2500);
+                            return;
+                          }
+                          setTemplateBlocosAtivo(tpl);
+                          setBlocoCopiadoIndex(null);
+                          if (onRegistrarAcaoContato) {
+                            onRegistrarAcaoContato(lead.id, 'whatsapp', tpl.titulo);
+                          } else if (onUpdateStatus) {
+                            onUpdateStatus(lead.id, lead.status === 'novo' ? 'em_prospeccao' : lead.status);
+                          }
+                          setToastMsg(`Disparo em blocos: "${tpl.titulo}"`);
+                          setTimeout(() => setToastMsg(null), 2500);
+                        }}
+                        className="w-full flex items-center gap-3 p-2.5 bg-white hover:bg-slate-50 border border-slate-200 rounded text-slate-700 text-sm transition-colors text-left group cursor-pointer"
+                        title={`Abrir "${tpl.titulo}" em blocos humanizados`}
+                      >
+                        <div className="text-slate-500 group-hover:text-emerald-600 transition-colors shrink-0">
+                          {tpl.icone === 'MessageCircle' && <MessageCircle size={16} />}
+                          {tpl.icone === 'RefreshCw' && <RefreshCw size={16} />}
+                          {tpl.icone === 'CreditCard' && <CreditCard size={16} />}
+                          {tpl.icone === 'CheckCircle2' && <CheckCircle2 size={16} />}
+                          {tpl.icone === 'Building2' && <Building2 size={16} />}
+                          {tpl.icone === 'MapPin' && <MapPin size={16} />}
+                        </div>
+                        <span className="font-medium text-slate-800 flex-1 truncate">
+                          {tpl.titulo}
+                        </span>
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded shrink-0">
+                          {tpl.tag}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* DICA / RODAPÉ */}
+                  <div className="mt-4 p-3 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                      Envio em blocos separados para parecer 100% humano e evitar anti-spam do WhatsApp.
+                    </span>
+                    <span className="font-mono text-slate-600 font-semibold">
+                      {telLimpo ? `+55 ${telLimpo}` : 'Telefone não cadastrado'}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                /* PAINEL DISPARO EM BLOCOS (SPRINT 9.2) */
+                <div className="space-y-3.5 animate-in fade-in duration-150">
+                  {/* Top Bar do Disparo */}
+                  <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                    <button
+                      type="button"
+                      onClick={() => setTemplateBlocosAtivo(null)}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Voltar aos Gatilhos</span>
+                    </button>
+                    <span className="text-xs font-bold text-slate-800 truncate">
+                      {templateBlocosAtivo.titulo}
+                    </span>
+                  </div>
+
+                  {/* Botão Grande 1: Abrir Conversa no WhatsApp (link sem texto) */}
+                  <a
+                    href={`https://wa.me/55${telLimpo}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-sm text-sm transition-all cursor-pointer"
+                    title="Abre a conversa limpa no WhatsApp sem texto na URL"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span>1. Abrir Conversa no WhatsApp</span>
+                    <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                  </a>
+
+                  {/* Instrução visual na tela */}
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-xs flex items-center gap-2 shadow-2xs">
+                    <span className="text-base">💡</span>
+                    <span className="font-medium">
+                      Clique em abrir o WhatsApp, depois copie e cole os blocos um a um.
+                    </span>
+                  </div>
+
+                  {/* Lista de Blocos Numerados */}
+                  <div className="space-y-2.5">
+                    {quebrarEmBlocos(interpolar(templateBlocosAtivo.texto)).map((blocoRaw, idx) => {
+                      const bloco = limparTextoHumano(blocoRaw);
+                      const isCopiado = blocoCopiadoIndex === idx;
+
+                      return (
+                        <div
+                          key={idx}
+                          className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-2 hover:border-slate-300 transition-colors"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                              <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center text-[10px] font-bold font-mono">
+                                {idx + 1}
+                              </span>
+                              <span>Bloco {idx + 1}</span>
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(bloco);
+                                setBlocoCopiadoIndex(idx);
+                                setToastMsg(`Bloco ${idx + 1} copiado!`);
+                                setTimeout(() => {
+                                  setBlocoCopiadoIndex(null);
+                                  setToastMsg(null);
+                                }, 2000);
+                              }}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs ${
+                                isCopiado
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                              }`}
+                              title={`Copiar Bloco ${idx + 1}`}
+                            >
+                              {isCopiado ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5 text-slate-500" />
+                              )}
+                              <span>{isCopiado ? 'Copiado!' : 'Copiar'}</span>
+                            </button>
+                          </div>
+
+                          <p className="text-xs text-slate-800 leading-relaxed font-sans bg-slate-50/80 p-2.5 rounded-lg border border-slate-100 select-all">
+                            {bloco}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Rodapé do Envio em Blocos */}
+                  <div className="pt-2 flex items-center justify-between text-xs text-slate-500">
+                    <button
+                      type="button"
+                      onClick={() => setTemplateBlocosAtivo(null)}
+                      className="text-xs text-slate-500 hover:text-slate-800 font-semibold cursor-pointer py-1"
+                    >
+                      ← Escolher outro template
+                    </button>
+                    <span className="text-[11px] font-mono text-slate-400">
+                      Disparando para +55 {telLimpo}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -641,7 +917,9 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
                   <a
                     href={`tel:${telLimpo}`}
                     onClick={() => {
-                      if (onUpdateStatus) {
+                      if (onRegistrarAcaoContato) {
+                        onRegistrarAcaoContato(lead.id, 'ligacao', 'Ligação Telefônica');
+                      } else if (onUpdateStatus) {
                         onUpdateStatus(lead.id, lead.status === 'novo' ? 'em_prospeccao' : lead.status);
                       }
                       setToastMsg('Iniciando chamada...');
@@ -929,17 +1207,24 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        const agoraIso = new Date().toISOString();
+                        const novoStatus: LeadStatus = lead.status === 'novo' ? 'em_prospeccao' : lead.status;
                         if (onUpdateLead) {
                           onUpdateLead({
                             ...lead,
+                            status: novoStatus,
+                            dataUltimoContato: agoraIso,
+                            atualizadoEm: agoraIso,
                             parceiroSantander: {
                               status: 'apto',
-                              verificadoEm: new Date().toISOString(),
+                              verificadoEm: agoraIso,
                             },
-                            atualizadoEm: new Date().toISOString(),
                           });
                         }
-                        setToastMsg('✓ Apto para indicação (Verificado)');
+                        if (lead.status === 'novo') {
+                          onUpdateStatus(lead.id, 'em_prospeccao');
+                        }
+                        setToastMsg('✓ Apto para indicação! Lead movido para Em Prospecção.');
                         setTimeout(() => setToastMsg(null), 2500);
                       }}
                       className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
@@ -1834,7 +2119,7 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
                 className="inline-flex items-center gap-1 text-xs font-bold text-red-700 hover:text-red-800 cursor-pointer"
               >
                 {salvo ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : <Save className="w-3 h-3" />}
-                <span>{salvo ? 'Salvo!' : 'Salvar'}</span>
+                <span>{salvo ? 'Salvo!' : 'Salvar Nota Rápida'}</span>
               </button>
             </div>
             <textarea
@@ -1886,6 +2171,452 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
 
         </div>
       )}
+
+          {/* ABA 4: PÓS-VENDA (CONDICIONAL A STATUS === 'FECHADO') */}
+          {tabAtiva === 'pos_venda' && lead.status === 'fechado' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              {/* Header do Ciclo & Ativação */}
+              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                        Credenciamento Fechado
+                      </span>
+                      {j && (
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-100 text-blue-800">
+                          Ciclo {j.fase}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-sm font-bold text-slate-900 mt-1">
+                      Painel de Pós-Venda & Ativação
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-xs font-bold px-2.5 py-1 rounded-lg border ${
+                        statusAtivacao === 'ativa'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : statusAtivacao === 'risco'
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          : statusAtivacao === 'em_andamento'
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-slate-50 text-slate-600 border-slate-200'
+                      }`}
+                    >
+                      {statusAtivacao === 'ativa'
+                        ? 'Ativação Concluída'
+                        : statusAtivacao === 'risco'
+                        ? 'Risco de Expirar'
+                        : statusAtivacao === 'em_andamento'
+                        ? 'Ativação em Andamento'
+                        : 'Aguardando Ativação'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Resumo Ciclo Santander */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3 text-[11px]">
+                  <div className="bg-slate-50 rounded-lg p-2 border border-slate-100">
+                    <span className="text-slate-400 block text-[10px]">Fechamento</span>
+                    <strong className="text-slate-800 font-mono">
+                      {lead.dataFechamento
+                        ? new Date(lead.dataFechamento).toLocaleDateString('pt-BR')
+                        : 'Hoje'}
+                    </strong>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2 border border-slate-100">
+                    <span className="text-slate-400 block text-[10px]">Janela M1</span>
+                    <strong className="text-slate-800 font-mono">
+                      {j ? `${j.diasRestantesM1}d restantes` : 'Ativo'}
+                    </strong>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2 border border-slate-100">
+                    <span className="text-slate-400 block text-[10px]">PIX Santander</span>
+                    <strong className={pixQtd >= 3 ? 'text-emerald-700' : 'text-slate-800'}>
+                      {pixQtd}/3 {pixQtd >= 3 ? '✓ Ativo' : 'pendente'}
+                    </strong>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2 border border-slate-100">
+                    <span className="text-slate-400 block text-[10px]">POS Getnet</span>
+                    <strong className={maquinaVol >= 500 ? 'text-emerald-700' : 'text-slate-800'}>
+                      R$ {maquinaVol} {maquinaVol >= 500 ? '✓ Ativa' : '/ R$ 500'}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* CHECKPOINT 1: QUALIFICAÇÃO & FATURAMENTO */}
+              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <DollarSign className="w-4 h-4 text-slate-700" />
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                      1. Qualificação
+                    </h4>
+                  </div>
+                  {isFaturamentoAcima60k && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <ShieldCheck className="w-3 h-3" />
+                      Isenção 6 Máquinas
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* CNAE Elegível */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      CNAE Elegível
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setCnaeElegivelState(true)}
+                        className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                          cnaeElegivelState
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                            : 'bg-slate-50 text-slate-500 border-slate-200'
+                        }`}
+                      >
+                        Sim (PJ/MEI+)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCnaeElegivelState(false)}
+                        className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                          !cnaeElegivelState
+                            ? 'bg-rose-50 text-rose-800 border-rose-300'
+                            : 'bg-slate-50 text-slate-500 border-slate-200'
+                        }`}
+                      >
+                        Não (MEI)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Faturamento Mensal R$ */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      Faturamento Mensal
+                    </label>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-[11px] font-bold text-slate-400 pointer-events-none">
+                        R$
+                      </span>
+                      <input
+                        type="number"
+                        value={faturamentoInput}
+                        onChange={(e) => setFaturamentoInput(e.target.value)}
+                        placeholder="0"
+                        className="w-full pl-8 pr-2 py-1.5 text-xs font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {(lead.cnaeDescricao || lead.cnaeCodigo) && (
+                  <div className="text-[11px] text-slate-500 truncate font-mono bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
+                    CNAE: {lead.cnaeCodigo} {lead.cnaeDescricao ? `- ${lead.cnaeDescricao}` : ''}
+                  </div>
+                )}
+              </div>
+
+              {/* CHECKPOINT 2: CONTA PJ (SANTANDER) */}
+              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <Landmark className="w-4 h-4 text-slate-700" />
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                      2. Conta PJ (Santander)
+                    </h4>
+                  </div>
+                  <span
+                    className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded ${
+                      statusContaPJState === 'Aprovada'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : statusContaPJState === 'Link Enviado'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    {statusContaPJState}
+                  </span>
+                </div>
+
+                <div className="space-y-2.5">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      Status da Conta
+                    </label>
+                    <select
+                      value={statusContaPJState}
+                      onChange={(e) => setStatusContaPJState(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs font-semibold text-slate-900 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900 cursor-pointer"
+                    >
+                      <option value="Não Iniciada">Não Iniciada</option>
+                      <option value="Link Enviado">Link Enviado</option>
+                      <option value="Em Análise">Em Análise</option>
+                      <option value="Aprovada">Aprovada</option>
+                      <option value="Derivada para Agência">Derivada para Agência</option>
+                    </select>
+                  </div>
+
+                  {/* 1-click button: Copiar Link Conta PJ */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const link = 'https://www.santander.com.br/conta-empresarial/cnpj?utm_source=email&utm_medium=devolucao&utm_campaign=nucleo';
+                      navigator.clipboard.writeText(link).then(() => {
+                        setCopiadoLinkSantander(true);
+                        setTimeout(() => setCopiadoLinkSantander(false), 2000);
+                        setToastMsg('Link Santander copiado!');
+                        setTimeout(() => setToastMsg(null), 2500);
+                      });
+                    }}
+                    className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 active:bg-slate-100 text-xs font-bold text-slate-800 transition-all cursor-pointer shadow-2xs"
+                  >
+                    {copiadoLinkSantander ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="text-emerald-700">Link Copiado!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Link2 className="w-3.5 h-3.5 text-slate-600" />
+                        <span>Copiar Link Conta PJ</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* CHECKPOINT 3: POS (GETNET) */}
+              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <CreditCard className="w-4 h-4 text-slate-700" />
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                      3. POS & Adquirência (Getnet)
+                    </h4>
+                  </div>
+                  <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                    {statusPedidoPOSState}
+                  </span>
+                </div>
+
+                <div className="space-y-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        Modelo POS
+                      </label>
+                      <select
+                        value={modeloPOSState}
+                        onChange={(e) => setModeloPOSState(e.target.value)}
+                        className="w-full px-2 py-1.5 text-xs font-semibold text-slate-900 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900 cursor-pointer"
+                      >
+                        <option value="Get Clássica">Get Clássica</option>
+                        <option value="POS 3G">POS 3G</option>
+                        <option value="Get Tap">Get Tap</option>
+                        <option value="Link de Pagamento">Link de Pagamento</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        Status Logística
+                      </label>
+                      <select
+                        value={statusPedidoPOSState}
+                        onChange={(e) => setStatusPedidoPOSState(e.target.value)}
+                        className="w-full px-2 py-1.5 text-xs font-semibold text-slate-900 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900 cursor-pointer"
+                      >
+                        <option value="Não Solicitado">Não Solicitado</option>
+                        <option value="Submetido">Submetido</option>
+                        <option value="Em Processo de Entrega">Em Processo de Entrega</option>
+                        <option value="Entregue">Entregue</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Checkbox 1-clique: Completude Cadastral */}
+                  <label
+                    className={`flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors select-none ${
+                      completudeCadastralState
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={completudeCadastralState}
+                      onChange={(e) => setCompletudeCadastralState(e.target.checked)}
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
+                    />
+                    <div className="text-xs leading-tight">
+                      <span>Completude Cadastral no App</span>
+                      <p className="text-[10px] font-normal text-slate-500">
+                        Selfie + CNH validadas no app Santander Empresas
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* CHECKPOINT 4: ATIVAÇÃO OPERACIONAL (PIX & MÁQUINA) */}
+              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                      4. Ativação Operacional
+                    </h4>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    Metas Santander
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* PIX */}
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800">Chaves PIX ({pixQtd}/3)</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                        pixQtd >= 3 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                      }`}>
+                        {pixQtd >= 3 ? 'Meta Atingida' : 'Pendente'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1">
+                      {[0, 1, 2, 3].map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => {
+                            if (!onUpdateLead || !lead) return;
+                            const atualizado = definirPix(lead, val);
+                            onUpdateLead(atualizado);
+                            setToastMsg(`PIX definido como ${val}/3`);
+                            setTimeout(() => setToastMsg(null), 2000);
+                          }}
+                          className={`py-1 rounded text-xs font-bold border transition-colors cursor-pointer ${
+                            pixQtd === val
+                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {val}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Máquina */}
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800">Vendas Máq (R$ {maquinaVol})</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                        maquinaVol >= 500 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                      }`}>
+                        {maquinaVol >= 500 ? 'Meta R$500' : 'Meta R$500'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!onUpdateLead || !lead) return;
+                          const atualizado = registrarVendaMaquina(lead, 100);
+                          onUpdateLead(atualizado);
+                          setToastMsg('+ R$ 100 registrado');
+                          setTimeout(() => setToastMsg(null), 2000);
+                        }}
+                        className="py-1 rounded text-xs font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 cursor-pointer"
+                      >
+                        +R$ 100
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!onUpdateLead || !lead) return;
+                          const atualizado = definirMaquinaVendas(lead, 500);
+                          onUpdateLead(atualizado);
+                          setToastMsg('Máquina ativada (R$ 500)');
+                          setTimeout(() => setToastMsg(null), 2000);
+                        }}
+                        className={`py-1 rounded text-xs font-bold border cursor-pointer ${
+                          maquinaVol >= 500
+                            ? 'bg-emerald-600 text-white border-emerald-700'
+                            : 'bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-50'
+                        }`}
+                      >
+                        R$ 500 ✓
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!onUpdateLead || !lead) return;
+                          const atualizado = definirMaquinaVendas(lead, 0);
+                          onUpdateLead(atualizado);
+                          setToastMsg('Vendas zeradas');
+                          setTimeout(() => setToastMsg(null), 2000);
+                        }}
+                        className="py-1 rounded text-xs font-bold bg-white text-slate-500 border border-slate-200 hover:bg-slate-100 cursor-pointer"
+                      >
+                        Zerar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Botão de Salvar Dados do Pós-Venda */}
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!onUpdateLead || !lead) return;
+                    const faturamentoNum = faturamentoInput.trim() !== '' ? Number(faturamentoInput) : undefined;
+                    const atualizado: Lead = {
+                      ...lead,
+                      isMei: !cnaeElegivelState,
+                      atualizadoEm: new Date().toISOString(),
+                      ...({
+                        faturamentoMensal: faturamentoNum,
+                        faturamentoEstimado: faturamentoNum,
+                        statusContaPJ: statusContaPJState,
+                        modeloEquipamento: modeloPOSState,
+                        statusPedidoPOS: statusPedidoPOSState,
+                        completudeCadastral: completudeCadastralState,
+                      } as any),
+                    };
+                    onUpdateLead(atualizado);
+                    setSalvoPosVenda(true);
+                    setTimeout(() => setSalvoPosVenda(false), 2000);
+                    setToastMsg('Dados de Pós-Venda salvos!');
+                    setTimeout(() => setToastMsg(null), 2500);
+                  }}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 active:bg-emerald-800 shadow-2xs transition-colors cursor-pointer"
+                >
+                  {salvoPosVenda ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Dados Salvos!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>Salvar Dados de Pós-Venda</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
 
         </div>
 

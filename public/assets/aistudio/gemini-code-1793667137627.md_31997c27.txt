@@ -1,0 +1,50 @@
+Contexto: iCtx CRM (React 18 + TS + Tailwind), arquitetura Enterprise SaaS B2B. Siga REGRAS.md.
+O App Shell (Sidebar/Topbar) já foi implementado. 
+
+Tarefa: Sprint 8.1 — Cérebro Comercial (Estrutura de Dados e Dossiê do Cliente).
+O CRM deixou de ser genérico. Agora ele é um motor de vendas B2B focado em Adquirência (Getnet) e Abertura de Conta PJ (Santander). 
+
+ESCOPO — altere SOMENTE e crie se necessário:
+1) src/types/Client.ts (ou Lead.ts - Atualizar a tipagem de dados)
+2) src/components/ClientDossier.tsx (Novo Modal/Página de Detalhes do Cliente)
+
+DIRETRIZES DE DESIGN SYSTEM:
+- Estética Corporativa Enterprise: Zero emojis. Use ícones `lucide-react`. 
+- Paleta: Fundo `bg-white`, divisórias `divide-y divide-slate-100`, textos `text-slate-800`, labels `text-slate-500 text-xs font-semibold uppercase`.
+- Layout do Dossiê: Grid estruturado. Dividido em "Blocos de Inteligência" (Cards limpos com borda sutil).
+
+═══════════════════════════════════════════════════════════
+PASSO 1 — Estrutura de Dados (types/Client.ts)
+═══════════════════════════════════════════════════════════
+Adicione ou atualize a interface do Cliente para suportar a operação real:
+- Dados Básicos: id, razaoSocial, nomeFantasia, cnpj, telefone, email.
+- Inteligência Comercial: 
+  - `faturamentoMensal` (number)
+  - `cnae` (string)
+  - `ofertaRecomendada` ('D1 Com Parcelamento' | 'D1 Sem Parcelamento' | 'D2' | 'Pendente')
+- Integração Santander (Conta PJ):
+  - `statusContaPJ` ('Não Iniciada' | 'Link Enviado' | 'Em Análise' | 'Aprovada' | 'Derivada para Agência')
+- Operação Getnet:
+  - `modeloEquipamento` ('Get Clássica' | 'POS 3G' | 'Get Tap' | 'Link de Pagamento')
+  - `statusPedidoPOS` ('Não Solicitado' | 'Submetido' | 'Em Processo de Entrega' | 'Entregue')
+  - `completudeCadastral` (boolean) -> Reflete se o cliente já validou a selfie/CNH no app.
+
+═══════════════════════════════════════════════════════════
+PASSO 2 — O Dossiê do Cliente (ClientDossier.tsx)
+═══════════════════════════════════════════════════════════
+Crie o componente de visualização do cliente. Ele não deve parecer um formulário feio, mas sim um Dashboard Individual.
+
+Estrutura visual recomendada:
+- Cabeçalho do Modal: Nome Fantasia (em destaque), CNPJ e um Badge sutil com o Status do Funil.
+- Corpo dividido em 3 abas ou seções de grid:
+  1. PERFIL DO NEGÓCIO: Mostra Faturamento e CNAE. Se o faturamento for > 60k, exiba um alerta visual discreto verde: "Elegível Isenção 6 Máquinas".
+  2. ONBOARDING SANTANDER: Um mini-stepper ou dropdown mostrando o `statusContaPJ`.
+  3. IMPLANTAÇÃO GETNET: Exibe o `modeloEquipamento` e o `statusPedidoPOS`. Um checkbox visual para `completudeCadastral`.
+
+Ações Rápidas (Botões no topo ou rodapé do Dossiê):
+- "Gerar Link Conta PJ" (ícone de Link)
+- "Avançar Etapa do Funil" (ícone de ArrowRight, botão primário `bg-slate-800 text-white hover:bg-slate-700`).
+
+CRITÉRIOS DE ACEITE:
+- O modal parece um sistema bancário/fintech (limpo, sério, focado em conversão).
+- A tipagem reflete exatamente a jornada de vendas Getnet/Santander.

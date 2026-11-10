@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   CreditCard,
+  MessageCircle,
 } from 'lucide-react';
 import { Lead, LeadStatus } from '../types/crm';
 import { ehFollowUpVencido, diasDesdeUltimoContato, obterInfoFollowUp } from '../utils/cadencia';
@@ -41,7 +42,7 @@ interface LeadCardProps {
   onOpenCallScript?: (lead: Lead) => void;
   onOpenDetails: (lead: Lead) => void;
   onUpdateStatus?: (leadId: string, status: LeadStatus) => void;
-  onOpenAtivacao?: (lead: Lead) => void;
+  onRegistrarAcaoContato?: (leadId: string, tipo: 'whatsapp' | 'ligacao', templateTitulo?: string) => void;
 }
 
 export const LeadCard: React.FC<LeadCardProps> = ({
@@ -50,7 +51,7 @@ export const LeadCard: React.FC<LeadCardProps> = ({
   onOpenCallScript,
   onOpenDetails,
   onUpdateStatus,
-  onOpenAtivacao,
+  onRegistrarAcaoContato,
 }) => {
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
     e.dataTransfer.setData('text/plain', lead.id);
@@ -187,11 +188,32 @@ export const LeadCard: React.FC<LeadCardProps> = ({
         </p>
       )}
 
-      {/* Linha 3: Telefone Celular formatado */}
+      {/* Linha 3: Telefone Celular formatado com link WhatsApp */}
       {wa && (
-        <p className="text-xs font-mono text-slate-400 truncate mt-1 leading-none">
-          {wa}
-        </p>
+        <div className="mt-1 flex items-center gap-1.5 leading-none">
+          <a
+            href={`https://wa.me/55${(lead.telefonePrincipal || lead.telefonePrincipalFormatado || '').replace(/\D/g, '')}?text=${encodeURIComponent(`Olá ${primeiroNome || ''}, tudo bem?`)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onRegistrarAcaoContato) {
+                onRegistrarAcaoContato(lead.id, 'whatsapp', 'WhatsApp Rápido');
+              } else {
+                window.dispatchEvent(
+                  new CustomEvent('ictx:registrarAcaoContato', {
+                    detail: { leadId: lead.id, tipo: 'whatsapp', templateTitulo: 'WhatsApp Rápido' },
+                  })
+                );
+              }
+            }}
+            className="inline-flex items-center gap-1 text-xs font-mono text-slate-500 hover:text-emerald-600 transition-colors cursor-pointer group/zap"
+            title="Abrir WhatsApp e registrar contato"
+          >
+            <MessageCircle className="w-3 h-3 text-slate-400 group-hover/zap:text-emerald-500 shrink-0" />
+            <span className="truncate group-hover/zap:underline">{wa}</span>
+          </a>
+        </div>
       )}
 
       {/* Linha 4: Indicadores de texto ultralimpos (sem colchetes) e ícones de ativação (sem botões de zap/ligar) */}
@@ -207,19 +229,9 @@ export const LeadCard: React.FC<LeadCardProps> = ({
         </div>
 
         {/* Direita: Ativações PIX e Máquina */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           {/* PIX */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (lead.status === 'fechado' && onOpenAtivacao) {
-                onOpenAtivacao(lead);
-              } else {
-                onOpenDetails(lead);
-              }
-            }}
-            disabled={lead.status !== 'fechado'}
+          <span
             title={
               lead.status !== 'fechado'
                 ? 'PIX — disponível quando credenciado'
@@ -227,31 +239,21 @@ export const LeadCard: React.FC<LeadCardProps> = ({
                   ? `PIX ${pixCount}/3 — ativo`
                   : `PIX ${pixCount}/3 — pendente`
             }
-            className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
+            className={`pointer-events-none cursor-default w-6 h-6 flex items-center justify-center rounded-md ${
               lead.status !== 'fechado'
-                ? 'text-slate-300 cursor-not-allowed opacity-60'
+                ? 'text-slate-300 opacity-60'
                 : pixCount >= 3
-                  ? 'text-emerald-600 hover:bg-emerald-50 cursor-pointer'
+                  ? 'text-emerald-600'
                   : pixCount > 0
-                    ? 'text-amber-500 hover:bg-amber-50 cursor-pointer'
-                    : 'text-slate-400 hover:bg-slate-100 cursor-pointer'
+                    ? 'text-amber-500'
+                    : 'text-slate-400'
             }`}
           >
             <PixIcon className="w-3.5 h-3.5" />
-          </button>
+          </span>
 
           {/* Máquina */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (lead.status === 'fechado' && onOpenAtivacao) {
-                onOpenAtivacao(lead);
-              } else {
-                onOpenDetails(lead);
-              }
-            }}
-            disabled={lead.status !== 'fechado'}
+          <span
             title={
               lead.status !== 'fechado'
                 ? 'Máquina — disponível quando credenciado'
@@ -259,18 +261,18 @@ export const LeadCard: React.FC<LeadCardProps> = ({
                   ? `Máq R$${maquinaVendas} — ativa`
                   : `Máq R$${maquinaVendas} — pendente`
             }
-            className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors ${
+            className={`pointer-events-none cursor-default w-6 h-6 flex items-center justify-center rounded-md ${
               lead.status !== 'fechado'
-                ? 'text-slate-300 cursor-not-allowed opacity-60'
+                ? 'text-slate-300 opacity-60'
                 : maquinaVendas >= 500
-                  ? 'text-emerald-600 hover:bg-emerald-50 cursor-pointer'
+                  ? 'text-emerald-600'
                   : maquinaVendas > 0
-                    ? 'text-amber-500 hover:bg-amber-50 cursor-pointer'
-                    : 'text-slate-400 hover:bg-slate-100 cursor-pointer'
+                    ? 'text-amber-500'
+                    : 'text-slate-400'
             }`}
           >
             <CreditCard className="w-3.5 h-3.5" />
-          </button>
+          </span>
 
           {/* Contagem de dias na linha de ativação */}
           {j && lead.status === 'fechado' && (
