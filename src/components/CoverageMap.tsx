@@ -64,15 +64,38 @@ export const CoverageMap: React.FC<CoverageMapProps> = ({
     if (bairrosPendentes instanceof Set) {
       return bairrosPendentes;
     }
-    return new Set(bairrosPendentes.map((b) => b.toLowerCase().trim()));
+    if (Array.isArray(bairrosPendentes)) {
+      return new Set(
+        bairrosPendentes
+          .filter((b): b is string => typeof b === 'string' && Boolean(b.trim()))
+          .map((b) => b.toLowerCase().trim())
+      );
+    }
+    if (typeof bairrosPendentes === 'string') {
+      return new Set(
+        (bairrosPendentes as string)
+          .split(/[,;\n]/)
+          .map((b) => b.toLowerCase().trim())
+          .filter(Boolean)
+      );
+    }
+    if (bairrosPendentes && typeof bairrosPendentes === 'object') {
+      return new Set(
+        Object.keys(bairrosPendentes).map((k) => k.toLowerCase().trim())
+      );
+    }
+    return new Set<string>();
   }, [bairrosPendentes]);
 
   // Normaliza lista de bairros e aplica o semáforo baseado no breakdown do cartucho
   const listaBairrosFormatados: BairroItem[] = React.useMemo(() => {
+    if (!Array.isArray(bairros)) {
+      return [];
+    }
     return bairros.map((item) => {
-      const nome = typeof item === 'string' ? item : item.nome;
-      const id = typeof item === 'string' ? item : item.id || item.nome;
-      const muni = typeof item === 'string' ? municipio : item.municipio || municipio;
+      const nome = typeof item === 'string' ? item : item?.nome || '';
+      const id = typeof item === 'string' ? item : item?.id || item?.nome || '';
+      const muni = typeof item === 'string' ? municipio : item?.municipio || municipio;
 
       const leadsNoCartucho = getCountFromBreakdown(breakdown, nome);
       const isPendente =
@@ -81,10 +104,10 @@ export const CoverageMap: React.FC<CoverageMapProps> = ({
 
       let status: BairroStatus = 'nao_minerado';
 
-      if (isPendente) {
+      if (leadsNoCartucho > 0) {
+        status = 'minerado'; // 🟢 Verde: quantidade > 0
+      } else if (isPendente) {
         status = 'processando'; // 🟡 Amarelo: bairro na fila/processando no job atual
-      } else if (leadsNoCartucho > 0) {
-        status = 'minerado'; // 🟢 Verde: já tem leads no cartucho
       } else {
         status = 'nao_minerado'; // 🔴 Vermelho: não minerado ou zerado no cartucho
       }

@@ -67,8 +67,18 @@ export function useMiningStatus(): MiningStatusData {
       const proc = typeof data.processando === 'number' ? data.processando : (data.status === 'rodando' || data.status === 'em_andamento' ? 1 : 0);
       const concluidos = data.bairrosConcluidos ?? 0;
       const total = data.totalBairros ?? 0;
-      const bd = data.breakdown || data.bairrosBreakdown || {};
-      const pend = data.pendentes || data.bairrosPendentes || [];
+      const bd: Record<string, number> =
+        (data.breakdown && typeof data.breakdown === 'object')
+          ? data.breakdown
+          : (data.bairrosBreakdown && typeof data.bairrosBreakdown === 'object')
+          ? data.bairrosBreakdown
+          : {};
+      const rawPend = data.pendentes ?? data.bairrosPendentes;
+      const pend: string[] = Array.isArray(rawPend)
+        ? rawPend.filter((b): b is string => typeof b === 'string')
+        : typeof rawPend === 'string'
+        ? rawPend.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean)
+        : [];
       const currentBairro = data.bairroAtual || (pend.length > 0 ? pend[0] : null);
       const rawStatus = data.status || (proc > 0 ? 'rodando' : 'idle');
 

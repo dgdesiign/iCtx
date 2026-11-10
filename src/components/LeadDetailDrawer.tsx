@@ -31,11 +31,12 @@ import {
   Landmark,
   Check,
   ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import { Lead, LeadStatus } from '../types/crm';
 import { CredenciamentoWizardModal } from './CredenciamentoWizardModal';
 import { COLUNAS_KANBAN } from './PipelineKanban';
-import { formatarNome, formatarTelefone, limparDigitos, consultarCnpj } from '../services/cnpjService';
+import { formatarNome, formatarTelefone, limparDigitos, consultarCnpj, calcularIdadeEmpresa } from '../services/cnpjService';
 import { obterInfoFollowUp, diasDesdeUltimoContato } from '../utils/cadencia';
 import { obterInfoScore } from '../utils/scoring';
 import { 
@@ -364,6 +365,7 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
   const [completudeCadastralState, setCompletudeCadastralState] = useState<boolean>(false);
   const [salvoPosVenda, setSalvoPosVenda] = useState<boolean>(false);
   const [copiadoLinkSantander, setCopiadoLinkSantander] = useState<boolean>(false);
+  const [isFetchingCnpj, setIsFetchingCnpj] = useState<boolean>(false);
 
   useEffect(() => {
     if (lead) {
@@ -504,6 +506,88 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
         }
       }
     );
+  };
+
+  const handleEnriquecerReceita = async () => {
+    if (!lead) return;
+    const cnpjAlvo = lead.cnpj || lead.cnpjFormatado?.replace(/\D/g, '') || '';
+    if (!cnpjAlvo) {
+      setToastMsg('Erro ao buscar CNPJ');
+      setTimeout(() => setToastMsg(null), 2500);
+      return;
+    }
+
+    setIsFetchingCnpj(true);
+    try {
+      const dados = await consultarCnpj(cnpjAlvo);
+      if (dados) {
+        const razaoSocial = dados.razao_social || lead.razaoSocial || '';
+        const nomeFantasia = dados.nome_fantasia || lead.nomeFantasia || '';
+        const empresaExibicao = dados.nome_fantasia || dados.razao_social || lead.empresaExibicao || '';
+        const cnaeCodigo = dados.cnae_fiscal !== undefined && dados.cnae_fiscal !== null ? String(dados.cnae_fiscal) : lead.cnaeCodigo;
+        const cnaeDescricao = dados.cnae_fiscal_descricao || lead.cnaeDescricao;
+        const logradouro = dados.logradouro || lead.logradouro;
+        const numero = dados.numero || lead.numero;
+        const bairro = dados.bairro || lead.bairro;
+        const municipio = dados.municipio || lead.municipio || lead.cidade;
+        const uf = dados.uf || lead.uf;
+        const cep = dados.cep || lead.cep;
+        const capitalSocial = dados.capital_social ?? lead.capitalSocial;
+        const dataAbertura = dados.data_inicio_atividade || lead.dataAbertura;
+        const porte = (dados as any).porte ?? (lead as any).porte;
+
+        const leadAtualizado: Lead = {
+          ...lead,
+          razaoSocial,
+          nomeFantasia,
+          empresaExibicao,
+          cnaeCodigo,
+          cnaeDescricao,
+          logradouro,
+          numero,
+          bairro,
+          municipio,
+          uf,
+          cep,
+          capitalSocial,
+          dataAbertura,
+          ...((dados as any).opcao_pelo_simei !== undefined ? { isMei: Boolean((dados as any).opcao_pelo_simei) } : {}),
+          ...((dados as any).qsa && Array.isArray((dados as any).qsa) && (dados as any).qsa.length > 0 ? {
+            socios: (dados as any).qsa.map((s: any) => ({
+              nome: s.nome_socio || s.nome_rep_legal || '',
+              qualificacao: s.qualificacao_socio || '',
+            }))
+          } : {}),
+          ...((dados as any).natureza_juridica ? { naturezaJuridica: (dados as any).natureza_juridica } : {}),
+          ...(porte ? ({ porte } as any) : {}),
+        };
+
+        if (dataAbertura) {
+          const calcIdade = calcularIdadeEmpresa(dataAbertura);
+          leadAtualizado.idadeEmpresa = calcIdade.texto;
+          leadAtualizado.idadeAnos = calcIdade.anos;
+          if (!leadAtualizado.cnpjInicio) {
+            leadAtualizado.cnpjInicio = dataAbertura;
+          }
+        }
+
+        if (onUpdateLead) {
+          onUpdateLead(leadAtualizado);
+        }
+        setEditEmpresa(empresaExibicao);
+        setToastMsg('Dados atualizados com sucesso!');
+        setTimeout(() => setToastMsg(null), 2500);
+      } else {
+        setToastMsg('Erro ao buscar CNPJ');
+        setTimeout(() => setToastMsg(null), 2500);
+      }
+    } catch (err) {
+      console.error('Erro ao consultar CNPJ:', err);
+      setToastMsg('Erro ao buscar CNPJ');
+      setTimeout(() => setToastMsg(null), 2500);
+    } finally {
+      setIsFetchingCnpj(false);
+    }
   };
 
   const cnpjValor = lead.cnpj || lead.cnpjFormatado?.replace(/\D/g, '') || '';
@@ -1387,7 +1471,7 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
                 <div className="min-w-0 pr-1.5">
                   <span className="text-[10px] uppercase font-bold text-slate-500 block">3. Razão Social</span>
                   <span className="text-xs font-medium text-slate-800 truncate block">
-                    {razaoValor || '—'}
+                    {lead.razaoSocial !== 'Empresa' ? lead.razaoSocial : 'Clique em Puxar Dados'}
                   </span>
                 </div>
                 <Copy className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 shrink-0" />
@@ -1426,8 +1510,25 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
               </button>
             </div>
 
-            {/* Botão extra no final: Copiar Tudo (Bloco) */}
-            <div className="pt-2 border-t border-slate-200/70 flex justify-end">
+            {/* Botões de Ação: Puxar Dados da Receita e Copiar Tudo (Bloco) */}
+            <div className="pt-2 border-t border-slate-200/70 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+              <button
+                type="button"
+                onClick={handleEnriquecerReceita}
+                disabled={isFetchingCnpj || !cnpjValor}
+                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                title="Puxar dados oficiais atualizados da Receita Federal via CNPJ"
+              >
+                {isFetchingCnpj ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Buscando...</span>
+                  </>
+                ) : (
+                  <span>🔄 Puxar Dados da Receita</span>
+                )}
+              </button>
+
               <button
                 type="button"
                 onClick={() => handleCopy(blocoTudoValor, 'Todos os Dados')}
@@ -2097,13 +2198,27 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
             </h4>
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-700">
               <p>
-                {lead.logradouro ? `${lead.logradouro}, ${lead.numero || 'S/N'}` : 'Endereço não informado'}
-                {lead.complemento ? ` (${lead.complemento})` : ''}
+                {lead.logradouro ? (
+                  <>
+                    {lead.logradouro}, {lead.numero || 'S/N'}
+                    {lead.complemento ? ` (${lead.complemento})` : ''}
+                  </>
+                ) : (lead as any).enderecoCompleto ? (
+                  (lead as any).enderecoCompleto
+                ) : (lead as any).endereco ? (
+                  (lead as any).endereco
+                ) : (
+                  'Endereço não informado'
+                )}
               </p>
-              <p className="text-slate-500 mt-0.5">
-                {lead.bairro ? `${lead.bairro} - ` : ''}
-                {lead.municipio}/{lead.uf} {lead.cep ? `· CEP: ${lead.cep}` : ''}
-              </p>
+              {(lead.bairro || lead.municipio || lead.uf || lead.cep) && (
+                <p className="text-slate-500 mt-0.5">
+                  {lead.bairro ? `${lead.bairro} - ` : ''}
+                  {lead.municipio || lead.cidade || ''}
+                  {lead.uf ? `/${lead.uf}` : ''}
+                  {lead.cep ? ` · CEP: ${lead.cep}` : ''}
+                </p>
+              )}
             </div>
           </div>
 
@@ -2298,7 +2413,7 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
                   </div>
 
                   {/* Faturamento Mensal R$ */}
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                       Faturamento Mensal
                     </label>
@@ -2314,6 +2429,17 @@ export const LeadDetailDrawer: React.FC<LeadDetailDrawerProps> = ({
                         className="w-full pl-8 pr-2 py-1.5 text-xs font-bold text-slate-900 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-slate-900"
                       />
                     </div>
+
+                    {/* Alerta de corte de pontuação (R$ 510.000/ano ou R$ 42.500/mês) */}
+                    {Number(faturamentoInput) >= 42500 ? (
+                      <div className="rounded-lg text-xs p-2.5 border bg-emerald-50 text-emerald-800 border-emerald-200 flex items-start gap-1.5 animate-in fade-in duration-150">
+                        <span>✅ Faturamento anual ≥ R$ 510.000. Elegível para pontuação cheia (10 pts).</span>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg text-xs p-2.5 border bg-amber-50 text-amber-800 border-amber-200 flex items-start gap-1.5 animate-in fade-in duration-150">
+                        <span>⚠️ Faturamento anual abaixo de R$ 510.000. Este lead vale no máximo 6 pontos (2 conta + 4 máquina), mesmo com CNPJ &gt; 1 ano.</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

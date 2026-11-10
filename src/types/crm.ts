@@ -45,6 +45,8 @@ export interface Lead {
   nomeTitular?: string;
   empresaParaMensagem?: string; // "sua empresa" se for MEI/Desenquadrado sem nome fantasia, ou o nome fantasia real
   capitalSocial?: number;
+  faturamentoMensal?: number;
+  faturamentoEstimado?: number;
   email?: string;
   logradouro?: string;
   numero?: string;

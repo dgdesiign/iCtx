@@ -15,6 +15,9 @@ import {
   Target,
   Pickaxe,
   Loader2,
+  Wand2,
+  Sparkles,
+  Database,
 } from 'lucide-react';
 import { Lead } from '../types/crm';
 import { NotificationStatus } from '../services/notificationService';
@@ -40,6 +43,10 @@ interface HeaderProps {
   onOpenNotifications?: () => void;
   notificationStatus?: NotificationStatus;
   followupsHojeCount?: number;
+  isEnriching?: boolean;
+  enrichProgress?: number;
+  enrichTotal?: number;
+  onEnrichAll?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -63,6 +70,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNotifications,
   notificationStatus = 'default',
   followupsHojeCount = 0,
+  isEnriching = false,
+  enrichProgress = 0,
+  enrichTotal = 0,
+  onEnrichAll,
 }) => {
   const totalLeads = leads.length;
   const fechados = leads.filter((l) => l.status === 'fechado').length;
@@ -331,14 +342,42 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* Exportar */}
+            {/* Enriquecimento em Lote (Receita Federal) */}
+            {onEnrichAll && (
+              <button
+                onClick={onEnrichAll}
+                disabled={isEnriching}
+                className={`relative h-9 flex items-center justify-center rounded-xl shadow-2xs transition-all cursor-pointer shrink-0 ${
+                  isEnriching
+                    ? 'px-3 bg-blue-600 text-white border border-blue-700 animate-pulse cursor-not-allowed'
+                    : 'w-9 bg-white text-blue-600 hover:text-blue-700 hover:bg-blue-50 border border-slate-300'
+                }`}
+                title={
+                  isEnriching
+                    ? 'Aguarde, buscando dados na Receita Federal'
+                    : 'Enriquecer todos os leads pendentes (Pode demorar)'
+                }
+                aria-label="Enriquecer Leads em Lote"
+              >
+                {isEnriching ? (
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                    <span>Enriquecendo {enrichProgress}/{enrichTotal}...</span>
+                  </div>
+                ) : (
+                  <Wand2 className="w-4 h-4 text-blue-600" />
+                )}
+              </button>
+            )}
+
+            {/* Backup / Exportar */}
             <button
               onClick={onExportCsv}
               className="w-9 h-9 flex items-center justify-center text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl shadow-2xs transition-colors cursor-pointer shrink-0"
-              title="Exportar Dados (CSV / Excel)"
-              aria-label="Exportar"
+              title="Backup e Exportação de Dados (CSV / Excel)"
+              aria-label="Backup e Exportação"
             >
-              <Download className="w-4 h-4" />
+              <Database className="w-4 h-4" />
             </button>
 
             {/* Instalar App / APK */}

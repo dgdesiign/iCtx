@@ -37,6 +37,7 @@ import {
   setupDaily9AmReminder,
   NotificationStatus,
 } from './services/notificationService';
+import { consultarCnpj, calcularIdadeEmpresa } from './services/cnpjService';
 import {
   Building2,
   Sparkles,
@@ -158,6 +159,16 @@ export default function App() {
   const [isInstallOpen, setIsInstallOpen] = useState(false);
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
   const [isBannerExpanded, setIsBannerExpanded] = useState(false);
+
+  // Estados de Enriquecimento em Lote (Robô Receita Federal)
+  const [isEnriching, setIsEnriching] = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState(0);
+  const [enrichTotal, setEnrichTotal] = useState(0);
+
+  const leadsRef = useRef(leads);
+  useEffect(() => {
+    leadsRef.current = leads;
+  }, [leads]);
 
   // Perfil do Usuário Ativo (Sprint 5)
   const [usuarioAtivo, setUsuarioAtivo] = useState<{
@@ -908,6 +919,132 @@ export default function App() {
     }
   };
 
+  const handleBatchEnrich = async () => {
+    if (isEnriching) return;
+
+    // Filtra leads onde razaoSocial === 'Empresa' OU !lead.cnaeCodigo
+    const pendentes = leads.filter(
+      (l) => l.cnpj && (l.razaoSocial === 'Empresa' || !l.cnaeCodigo || l.razaoSocial.trim() === '')
+    );
+
+    if (pendentes.length === 0) {
+      try {
+        alert('Nenhum lead pendente de enriquecimento');
+      } catch (e) {
+        console.log('Nenhum lead pendente de enriquecimento');
+      }
+      return;
+    }
+
+    setIsEnriching(true);
+    setEnrichTotal(pendentes.length);
+    setEnrichProgress(0);
+
+    for (let i = 0; i < pendentes.length; i++) {
+      const item = pendentes[i];
+
+      // Pula para o próximo se o lead já foi enriquecido no meio do processo
+      const leadAtual = leadsRef.current.find((l) => l.id === item.id) || item;
+      if (
+        leadAtual.razaoSocial &&
+        leadAtual.razaoSocial !== 'Empresa' &&
+        leadAtual.razaoSocial.trim() !== '' &&
+        leadAtual.cnaeCodigo
+      ) {
+        setEnrichProgress(i + 1);
+        continue;
+      }
+
+      const cnpjLimpo = (leadAtual.cnpj || leadAtual.cnpjFormatado || '').replace(/\D/g, '');
+      if (!cnpjLimpo || cnpjLimpo.length !== 14) {
+        setEnrichProgress(i + 1);
+        continue;
+      }
+
+      try {
+        const dados = await consultarCnpj(cnpjLimpo);
+        if (dados) {
+          const razaoSocial = dados.razao_social || leadAtual.razaoSocial || '';
+          const nomeFantasia = dados.nome_fantasia || leadAtual.nomeFantasia || '';
+          const empresaExibicao = dados.nome_fantasia || dados.razao_social || leadAtual.empresaExibicao || '';
+          const cnaeCodigo =
+            dados.cnae_fiscal !== undefined && dados.cnae_fiscal !== null
+              ? String(dados.cnae_fiscal)
+              : leadAtual.cnaeCodigo;
+          const cnaeDescricao = dados.cnae_fiscal_descricao || leadAtual.cnaeDescricao;
+          const logradouro = dados.logradouro || leadAtual.logradouro;
+          const numero = dados.numero || leadAtual.numero;
+          const bairro = dados.bairro || leadAtual.bairro;
+          const municipio = dados.municipio || leadAtual.municipio || leadAtual.cidade;
+          const uf = dados.uf || leadAtual.uf;
+          const cep = dados.cep || leadAtual.cep;
+          const capitalSocial = dados.capital_social ?? leadAtual.capitalSocial;
+          const dataAbertura = dados.data_inicio_atividade || leadAtual.dataAbertura;
+          const porte = (dados as any).porte ?? (leadAtual as any).porte;
+
+          const atualizado: Lead = {
+            ...leadAtual,
+            razaoSocial,
+            nomeFantasia,
+            empresaExibicao,
+            cnaeCodigo,
+            cnaeDescricao,
+            logradouro,
+            numero,
+            bairro,
+            municipio,
+            uf,
+            cep,
+            capitalSocial,
+            dataAbertura,
+            ...((dados as any).opcao_pelo_simei !== undefined
+              ? { isMei: Boolean((dados as any).opcao_pelo_simei) }
+              : {}),
+            ...((dados as any).qsa && Array.isArray((dados as any).qsa) && (dados as any).qsa.length > 0
+              ? {
+                  socios: (dados as any).qsa.map((s: any) => ({
+                    nome: s.nome_socio || s.nome_rep_legal || '',
+                    qualificacao: s.qualificacao_socio || '',
+                  })),
+                }
+              : {}),
+            ...((dados as any).natureza_juridica
+              ? { naturezaJuridica: (dados as any).natureza_juridica }
+              : {}),
+            ...(porte ? ({ porte } as any) : {}),
+          };
+
+          if (dataAbertura) {
+            const calcIdade = calcularIdadeEmpresa(dataAbertura);
+            atualizado.idadeEmpresa = calcIdade.texto;
+            atualizado.idadeAnos = calcIdade.anos;
+            if (!atualizado.cnpjInicio) {
+              atualizado.cnpjInicio = dataAbertura;
+            }
+          }
+
+          handleUpdateLead(atualizado);
+        }
+      } catch (err) {
+        console.warn(`[BatchEnrich] Falha ao consultar CNPJ ${cnpjLimpo}:`, err);
+      }
+
+      setEnrichProgress(i + 1);
+
+      // CRUCIAL: 20s de delay para respeitar o rate limit da BrasilAPI
+      if (i < pendentes.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20000));
+      }
+    }
+
+    setIsEnriching(false);
+    try {
+      alert('Enriquecimento em lote concluído!');
+    } catch (e) {
+      console.log('Enriquecimento em lote concluído!');
+    }
+  };
+
   const handleOpenAtivacao = (lead: Lead) => {
     setLeadParaMensagem(null);
     setLeadParaLigacao(null);
@@ -1107,6 +1244,10 @@ export default function App() {
         onOpenNotifications={() => setIsNotificationModalOpen(true)}
         notificationStatus={notificationPermission}
         followupsHojeCount={followupsHojeCount}
+        isEnriching={isEnriching}
+        enrichProgress={enrichProgress}
+        enrichTotal={enrichTotal}
+        onEnrichAll={handleBatchEnrich}
       />
 
       {/* Main Container */}
