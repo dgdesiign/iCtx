@@ -32,9 +32,9 @@ import { NotificationModal } from './components/NotificationModal';
 import { MiningDashboard } from './components/MiningDashboard';
 import { MiningFloatingWidget } from './components/MiningFloatingWidget';
 import { CartuchosModal } from './components/CartuchosModal';
-import { LoginScreen } from './components/LoginScreen'; // NOVO
-import { MobileNav } from './components/MobileNav'; // NOVO
-import { ProfileModal } from './components/ProfileModal'; // NOVO
+import { LoginScreen } from './components/LoginScreen';
+import { MobileNav } from './components/MobileNav';
+import { ProfileModal } from './components/ProfileModal';
 import { useMiningStatus } from './hooks/useMiningStatus';
 import {
   getNotificationPermissionStatus,
@@ -49,6 +49,7 @@ import {
   ChevronUp,
   Database,
   ClipboardPaste,
+  Loader2, // <--- AQUI ESTAVA O ERRO, AGORA CORRIGIDO
 } from 'lucide-react';
 import {
   autocorrigeLead,
@@ -154,7 +155,7 @@ export default function App() {
   const [isSingleLeadOpen, setIsSingleLeadOpen] = useState(false);
   const [isMiningOpen, setIsMiningOpen] = useState(false);
   const [isCartuchosOpen, setIsCartuchosOpen] = useState(false);
-  const [isProfileOpen, setIsProfileOpen] = useState(false); // NOVO
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const miningStatus = useMiningStatus();
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
