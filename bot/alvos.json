@@ -1,0 +1,10 @@
+[
+  { "municipio": "SALVADOR", "bairro": "Pituba", "cnae": "5611201" },
+  { "municipio": "SALVADOR", "bairro": "Pituba", "cnae": "5612100" },
+  { "municipio": "SALVADOR", "bairro": "Barra", "cnae": "5611201" },
+  { "municipio": "SALVADOR", "bairro": "Ondina", "cnae": "5611201" },
+  { "municipio": "SALVADOR", "bairro": "Rio Vermelho", "cnae": "5611201" },
+  { "municipio": "SALVADOR", "bairro": "Itapuã", "cnae": "5611201" },
+  { "municipio": "LAURO DE FREITAS", "bairro": "Centro", "cnae": "5611201" },
+  { "municipio": "LAURO DE FREITAS", "bairro": "Vilas do Atlântico", "cnae": "5611201" }
+]
