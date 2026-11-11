@@ -1,8 +1,7 @@
 import React from 'react';
 import { Lead } from '../types/crm';
 import { MessageCircle, PhoneCall, Flame, Sun, Snowflake, Clock, MapPin, Building2, ChevronRight } from 'lucide-react';
-import { calcularScore, obterInfoScore } from '../utils/scoring';
-import { abr... (import abreviarCidade se existir, senao ignora)
+import { obterInfoScore } from '../utils/scoring';
 import { ehCelularBR } from '../utils/telefone';
 
 interface LeadCardProps {
@@ -61,7 +60,7 @@ export const LeadCard: React.FC<LeadCardProps> = ({
         </div>
         <div className="flex items-center gap-1">
           <Building2 className="w-3 h-3 text-slate-400" />
-          <span>{lead.cnaeDescricao ? lead.cnaeDescricao.split(' ')[0] : 'CNAE'}</span>
+          <span className="truncate max-w-[80px]">{lead.cnaeDescricao ? lead.cnaeDescricao.split(' ')[0] : 'CNAE'}</span>
         </div>
       </div>
 
