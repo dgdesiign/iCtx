@@ -550,17 +550,25 @@ export default function App() {
     if (alterado) setLeads(leadsBackfillados);
   }, []);
 
-  // --- FUNÇÃO DE ENRIQUECIMENTO EM LOTE CORRIGIDA ---
+  // --- FUNÇÃO DE ENRIQUECIMENTO INTELIGENTE (BUSCA WHATSAPP) ---
   const handleBatchEnrich = async () => {
-    // A MUDANÇA ESTÁ AQUI: Pega qualquer lead que esteja sem telefone, sem CNAE ou com nome genérico
-    const leadsParaEnriquecer = leads.filter(l => 
-      !l.telefonePrincipal || 
-      !l.cnaeCodigo || 
-      l.razaoSocial === 'Empresa'
-    );
+    const leadsParaEnriquecer = leads.filter(l => {
+      if (l.status === 'fechado' || l.status === 'descartado') return false; // Pula fechados/descartados
+      
+      const tel1 = limparDigitos(l.telefonePrincipal || '');
+      const tel2 = limparDigitos(l.telefoneSecundario || '');
+      
+      const isCelular1 = tel1.length === 11 && tel1[2] === '9';
+      const isCelular2 = tel2.length === 11 && tel2[2] === '9';
+      
+      const temCelular = isCelular1 || isCelular2;
+      
+      // Só enriquece se NÃO tiver celular, OU se faltar CNAE, OU se o nome for "Empresa"
+      return !temCelular || !l.cnaeCodigo || l.razaoSocial === 'Empresa';
+    });
 
     if (leadsParaEnriquecer.length === 0) {
-      alert('Nenhum lead pendente de enriquecimento.');
+      alert('Nenhum lead pendente de enriquecimento (todos já possuem WhatsApp ou CNAE).');
       return;
     }
 
@@ -573,8 +581,27 @@ export default function App() {
       try {
         const dados = await consultarCnpj(lead.cnpj);
         if (dados) {
-          const telefonePrincipal = dados.ddd_telefone_1 ? limparDigitos(dados.ddd_telefone_1) : lead.telefonePrincipal;
-          const telefoneSecundario = dados.ddd_telefone_2 ? limparDigitos(dados.ddd_telefone_2) : lead.telefoneSecundario;
+          let tel1 = dados.ddd_telefone_1 ? limparDigitos(dados.ddd_telefone_1) : '';
+          let tel2 = dados.ddd_telefone_2 ? limparDigitos(dados.ddd_telefone_2) : '';
+
+          let isCelular1 = tel1.length === 11 && tel1[2] === '9';
+          let isCelular2 = tel2.length === 11 && tel2[2] === '9';
+
+          let novoTelPrincipal = lead.telefonePrincipal;
+          let novoTelSecundario = lead.telefoneSecundario;
+
+          // A MÁGICA ACONTECE AQUI: Prioriza sempre o celular!
+          if (isCelular1) {
+            novoTelPrincipal = tel1;
+            if (isCelular2 || tel2.length >= 10) novoTelSecundario = tel2;
+          } else if (isCelular2) {
+            novoTelPrincipal = tel2;
+            if (tel1.length >= 10) novoTelSecundario = tel1;
+          } else {
+            // Se nenhum for celular, mantém o que tinha ou usa o fixo
+            if (tel1 && (!lead.telefonePrincipal || lead.telefonePrincipal.length < 10)) novoTelPrincipal = tel1;
+            if (tel2 && !lead.telefoneSecundario) novoTelSecundario = tel2;
+          }
 
           const leadAtualizado: Lead = {
             ...lead,
@@ -590,10 +617,10 @@ export default function App() {
             uf: dados.uf || lead.uf,
             cep: dados.cep || lead.cep,
             dataAbertura: dados.data_inicio_atividade || lead.dataAbertura,
-            telefonePrincipal: telefonePrincipal,
-            telefonePrincipalFormatado: formatarTelefone(telefonePrincipal),
-            telefoneSecundario: telefoneSecundario || undefined,
-            telefoneSecundarioFormatado: telefoneSecundario ? formatarTelefone(telefoneSecundario) : undefined,
+            telefonePrincipal: novoTelPrincipal,
+            telefonePrincipalFormatado: formatarTelefone(novoTelPrincipal),
+            telefoneSecundario: novoTelSecundario || undefined,
+            telefoneSecundarioFormatado: novoTelSecundario ? formatarTelefone(novoTelSecundario) : undefined,
           };
           handleUpdateLead(leadAtualizado);
         }
@@ -601,7 +628,7 @@ export default function App() {
         console.warn(`Erro ao enriquecer ${lead.cnpj}:`, error);
       }
       setEnrichProgress(prev => prev + 1);
-      // Pausa de 20 segundos para respeitar o rate limit da API
+      // Pausa de 20 segundos
       await new Promise(r => setTimeout(r, 20000));
     }
 
