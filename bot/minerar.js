@@ -18,7 +18,9 @@ async function run() {
     return;
   }
 
-  while (leads.size < 300 && index < alvos.length) {
+  const LIMITE_CARTUCHO = 300;
+
+  while (leads.size < LIMITE_CARTUCHO && index < alvos.length) {
     const alvo = alvos[index];
     console.log(`Buscando: ${alvo.bairro} - ${alvo.municipio} | CNAE: ${alvo.cnae} (Total atual: ${leads.size})`);
 
@@ -27,11 +29,11 @@ async function run() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'api-key': API_KEY },
         body: JSON.stringify({
-          codigo_atividade_principal: [alvo.cnae], // Campo correto
-          situacao_cadastral: ["ATIVA"],          // Campo correto
-          uf: ["BA"],                             // UF como array
-          municipio: [alvo.municipio],            // Município como array
-          bairro: [alvo.bairro],                  // Bairro como array
+          codigo_atividade_principal: [alvo.cnae],
+          situacao_cadastral: ["ATIVA"],
+          uf: ["BA"],
+          municipio: [alvo.municipio],
+          bairro: [alvo.bairro],
           limite: 20,
           pagina: 1
         })
@@ -42,14 +44,19 @@ async function run() {
       if (response.ok) {
         try {
           const data = JSON.parse(rawText);
-          // A API pode retornar a lista em 'cnpjs' ou 'empresas'
           const empresas = data.cnpjs || data.empresas || [];
-          console.log(`   -> Retorno da API: ${empresas.length} empresas encontradas.`);
-          empresas.forEach(emp => {
-            if (emp.cnpj) leads.add(emp.cnpj);
-          });
+          
+          // Adiciona os leads respeitando o limite rígido de 300
+          for (const emp of empresas) {
+            if (emp.cnpj) {
+              leads.add(emp.cnpj);
+              if (leads.size >= LIMITE_CARTUCHO) break; // Trava interna
+            }
+          }
+          
+          console.log(`   -> Retorno da API: ${empresas.length} empresas. Total no cartucho: ${leads.size}`);
         } catch (e) {
-          console.log(`   -> A API respondeu, mas não é um JSON válido. Resposta: ${rawText.substring(0, 200)}`);
+          console.log(`   -> Erro ao ler JSON. Resposta: ${rawText.substring(0, 200)}`);
         }
       } else {
         console.log(`   -> ERRO HTTP ${response.status}. Resposta: ${rawText}`);
@@ -58,8 +65,14 @@ async function run() {
       console.error(`   -> Erro na busca de ${alvo.bairro}:`, error.message);
     }
 
-    index++;
-    // Pausa de 2 segundos entre bairros
+    index++; // Avança o bairro independente de ter enchido o cartucho ou não
+    
+    // Se bateu os 300, quebra o loop externo e para de buscar
+    if (leads.size >= LIMITE_CARTUCHO) {
+      console.log("🛑 Limite de 300 leads atingido. Parando mineração.");
+      break; 
+    }
+
     await new Promise(r => setTimeout(r, 2000));
   }
 
