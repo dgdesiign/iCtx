@@ -6,6 +6,9 @@ async function run() {
 
   const API_KEY = process.env.CASADOSDADOS_API_KEY;
   if (!API_KEY) throw new Error("Chave da API não configurada!");
+  
+  // Mostra os primeiros caracteres da chave para confirmar que ela chegou
+  console.log(`🔑 Chave recebida: ${API_KEY.substring(0, 5)}... (Tamanho: ${API_KEY.length})`);
 
   const alvos = JSON.parse(fs.readFileSync('./bot/alvos.json', 'utf8'));
   let progresso = JSON.parse(fs.readFileSync('./bot/progresso.json', 'utf8'));
@@ -18,7 +21,6 @@ async function run() {
     return;
   }
 
-  // O loop continua até chegar em 300 leads OU acabar os alvos
   while (leads.size < 300 && index < alvos.length) {
     const alvo = alvos[index];
     console.log(`Buscando: ${alvo.bairro} - ${alvo.municipio} | CNAE: ${alvo.cnae} (Total atual: ${leads.size})`);
@@ -31,42 +33,50 @@ async function run() {
           cnae: alvo.cnae,
           municipio: alvo.municipio,
           bairro: alvo.bairro,
+          uf: "BA", // Adicionamos a UF, que algumas APIs exigem
           situacao: "ATIVA"
         })
       });
 
+      const rawText = await response.text();
+      
       if (response.ok) {
-        const data = await response.json();
-        const empresas = data.cnpjs || [];
-        empresas.forEach(emp => {
-          if (emp.cnpj) leads.add(emp.cnpj);
-        });
+        try {
+          const data = JSON.parse(rawText);
+          const empresas = data.cnpjs || [];
+          console.log(`   -> Retorno da API: ${empresas.length} empresas encontradas.`);
+          empresas.forEach(emp => {
+            if (emp.cnpj) leads.add(emp.cnpj);
+          });
+        } catch (e) {
+           console.log(`   -> A API respondeu, mas não é um JSON válido. Resposta: ${rawText.substring(0, 100)}`);
+        }
+      } else {
+        console.log(`   -> ERRO HTTP ${response.status}. Resposta da API: ${rawText}`);
       }
     } catch (error) {
-      console.error(`Erro na busca de ${alvo.bairro}:`, error.message);
+      console.error(`   -> Erro na busca de ${alvo.bairro}:`, error.message);
     }
 
     index++;
-    // Pausa de 2 segundos entre bairros para não bloquear a API
     await new Promise(r => setTimeout(r, 2000));
   }
 
-  // Atualiza o progresso
   progresso.ultimoIndex = index;
   fs.writeFileSync('./bot/progresso.json', JSON.stringify(progresso, null, 2));
 
-  if (leads.size === 0) {
-    console.log("⚠️ Nenhum lead novo encontrado nesta rodada.");
-    return;
-  }
-
-  // Gera o Excel para o Robô AK
+  // Gera o Excel mesmo se estiver vazio, para não quebrar o Git
   console.log(`📦 Gerando cartucho com ${leads.size} leads...`);
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Leads AK');
   worksheet.columns = [{ header: 'CNPJ', key: 'cnpj', width: 20 }];
 
   leads.forEach(cnpj => worksheet.addRow({ cnpj }));
+  
+  // Se estiver vazio, adiciona uma linha em branco só para o arquivo existir
+  if (leads.size === 0) {
+      worksheet.addRow({ cnpj: "NENHUM_LEAD_ENCONTRADO" });
+  }
 
   const dataStr = new Date().toISOString().split('T')[0];
   const nomeArquivo = `cartucho_${dataStr}_${leads.size}leads.xlsx`;
