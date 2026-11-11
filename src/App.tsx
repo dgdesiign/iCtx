@@ -54,7 +54,7 @@ import {
   formatarTelefone,
   limparCnpj,
   limparDigitos,
-  consultarCnpj, // Import necessário para o enriquecimento em lote
+  consultarCnpj,
 } from './services/cnpjService';
 import { normalizarParaClient } from './types/Client';
 import { User } from 'firebase/auth';
@@ -155,7 +155,6 @@ export default function App() {
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
   const [isBannerExpanded, setIsBannerExpanded] = useState(false);
 
-  // --- ESTADOS DO ENRIQUECIMENTO EM LOTE ---
   const [isEnriching, setIsEnriching] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState(0);
   const [enrichTotal, setEnrichTotal] = useState(0);
@@ -551,7 +550,7 @@ export default function App() {
     if (alterado) setLeads(leadsBackfillados);
   }, []);
 
-  // --- FUNÇÃO DE ENRIQUECIMENTO EM LOTE ---
+  // --- FUNÇÃO DE ENRIQUECIMENTO EM LOTE ATUALIZADA ---
   const handleBatchEnrich = async () => {
     const leadsParaEnriquecer = leads.filter(l => !l.cnaeCodigo || l.razaoSocial === 'Empresa');
     if (leadsParaEnriquecer.length === 0) {
@@ -568,6 +567,10 @@ export default function App() {
       try {
         const dados = await consultarCnpj(lead.cnpj);
         if (dados) {
+          // Extrai o telefone principal e secundário da BrasilAPI
+          const telefonePrincipal = dados.ddd_telefone_1 ? limparDigitos(dados.ddd_telefone_1) : lead.telefonePrincipal;
+          const telefoneSecundario = dados.ddd_telefone_2 ? limparDigitos(dados.ddd_telefone_2) : lead.telefoneSecundario;
+
           const leadAtualizado: Lead = {
             ...lead,
             razaoSocial: dados.razao_social || lead.razaoSocial,
@@ -582,6 +585,10 @@ export default function App() {
             uf: dados.uf || lead.uf,
             cep: dados.cep || lead.cep,
             dataAbertura: dados.data_inicio_atividade || lead.dataAbertura,
+            telefonePrincipal: telefonePrincipal, // ATUALIZADO AQUI
+            telefonePrincipalFormatado: formatarTelefone(telefonePrincipal), // ATUALIZADO AQUI
+            telefoneSecundario: telefoneSecundario || undefined, // ATUALIZADO AQUI
+            telefoneSecundarioFormatado: telefoneSecundario ? formatarTelefone(telefoneSecundario) : undefined, // ATUALIZADO AQUI
           };
           handleUpdateLead(leadAtualizado);
         }
@@ -1102,7 +1109,6 @@ export default function App() {
         onOpenMetas={() => setIsMetasOpen(true)}
         onOpenNotifications={() => setIsNotificationModalOpen(true)}
         followupsHojeCount={followupsHojeCount}
-        // --- PROPS DO ENRIQUECIMENTO ---
         isEnriching={isEnriching}
         enrichProgress={enrichProgress}
         enrichTotal={enrichTotal}
