@@ -550,10 +550,10 @@ export default function App() {
     if (alterado) setLeads(leadsBackfillados);
   }, []);
 
-  // --- FUNÇÃO DE ENRIQUECIMENTO INTELIGENTE (BUSCA WHATSAPP) ---
+  // --- FUNÇÃO DE ENRIQUECIMENTO INTELIGENTE (RESILIENTE E COM PAUSA) ---
   const handleBatchEnrich = async () => {
     const leadsParaEnriquecer = leads.filter(l => {
-      if (l.status === 'fechado' || l.status === 'descartado') return false; // Pula fechados/descartados
+      if (l.status === 'fechado' || l.status === 'descartado') return false;
       
       const tel1 = limparDigitos(l.telefonePrincipal || '');
       const tel2 = limparDigitos(l.telefoneSecundario || '');
@@ -563,12 +563,11 @@ export default function App() {
       
       const temCelular = isCelular1 || isCelular2;
       
-      // Só enriquece se NÃO tiver celular, OU se faltar CNAE, OU se o nome for "Empresa"
       return !temCelular || !l.cnaeCodigo || l.razaoSocial === 'Empresa';
     });
 
     if (leadsParaEnriquecer.length === 0) {
-      alert('Nenhum lead pendente de enriquecimento (todos já possuem WhatsApp ou CNAE).');
+      alert('Nenhum lead pendente de enriquecimento.');
       return;
     }
 
@@ -590,7 +589,6 @@ export default function App() {
           let novoTelPrincipal = lead.telefonePrincipal;
           let novoTelSecundario = lead.telefoneSecundario;
 
-          // A MÁGICA ACONTECE AQUI: Prioriza sempre o celular!
           if (isCelular1) {
             novoTelPrincipal = tel1;
             if (isCelular2 || tel2.length >= 10) novoTelSecundario = tel2;
@@ -598,7 +596,6 @@ export default function App() {
             novoTelPrincipal = tel2;
             if (tel1.length >= 10) novoTelSecundario = tel1;
           } else {
-            // Se nenhum for celular, mantém o que tinha ou usa o fixo
             if (tel1 && (!lead.telefonePrincipal || lead.telefonePrincipal.length < 10)) novoTelPrincipal = tel1;
             if (tel2 && !lead.telefoneSecundario) novoTelSecundario = tel2;
           }
@@ -628,13 +625,30 @@ export default function App() {
         console.warn(`Erro ao enriquecer ${lead.cnpj}:`, error);
       }
       setEnrichProgress(prev => prev + 1);
+      
+      // Salva o progresso no localStorage para não perder se o usuário atualizar a página
+      localStorage.setItem('ictx_enrich_progress', JSON.stringify({ atual: i + 1, total: leadsParaEnriquecer.length }));
+
       // Pausa de 20 segundos
       await new Promise(r => setTimeout(r, 20000));
     }
 
     setIsEnriching(false);
+    localStorage.removeItem('ictx_enrich_progress');
     alert('Enriquecimento em lote concluído!');
   };
+
+  // Retoma o enriquecimento se a página for atualizada
+  useEffect(() => {
+    const progSalvo = localStorage.getItem('ictx_enrich_progress');
+    if (progSalvo && !isEnriching) {
+      const p = JSON.parse(progSalvo);
+      if (p.atual < p.total) {
+        console.log('Retomando enriquecimento de onde parou...');
+        handleBatchEnrich();
+      }
+    }
+  }, []);
 
   const handleUpdateLeadStatus = (
     leadId: string,
