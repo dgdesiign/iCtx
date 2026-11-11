@@ -1,48 +1,16 @@
 import React from 'react';
-import {
-  CreditCard,
-  MessageCircle,
-} from 'lucide-react';
-import { Lead, LeadStatus } from '../types/crm';
-import { ehFollowUpVencido, diasDesdeUltimoContato, obterInfoFollowUp } from '../utils/cadencia';
-import { calcularScore } from '../utils/scoring';
-import { ehCelularBR, formatarCelularBR } from '../utils/telefone';
-import { abreviarCidade } from '../utils/cidade';
-import { abreviarEmpresaMEI } from '../utils/empresa';
-import { potencial } from '../utils/pontos';
-import { calcularAtivacaoStatus, janelaCheia, contaAtiva, maquinaAtiva } from '../utils/ativacao';
-
-const PixIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    className={className}
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <path 
-      d="M12 2.8 L21.2 12 L12 21.2 L2.8 12 Z" 
-      stroke="currentColor" 
-      strokeWidth="1.8" 
-      strokeLinejoin="round" 
-      fill="none"
-    />
-    <path 
-      d="M12 8 L16 12 L12 16 L8 12 Z" 
-      stroke="currentColor" 
-      strokeWidth="1.5" 
-      strokeLinejoin="round" 
-      fill="none"
-    />
-  </svg>
-);
+import { Lead } from '../types/crm';
+import { MessageCircle, PhoneCall, Flame, Sun, Snowflake, Clock, MapPin, Building2, ChevronRight } from 'lucide-react';
+import { calcularScore, obterInfoScore } from '../utils/scoring';
+import { abr... (import abreviarCidade se existir, senao ignora)
+import { ehCelularBR } from '../utils/telefone';
 
 interface LeadCardProps {
   lead: Lead;
-  onOpenMessageComposer?: (lead: Lead) => void;
-  onOpenCallScript?: (lead: Lead) => void;
+  onOpenMessageComposer: (lead: Lead) => void;
+  onOpenCallScript: (lead: Lead) => void;
   onOpenDetails: (lead: Lead) => void;
-  onUpdateStatus?: (leadId: string, status: LeadStatus) => void;
-  onRegistrarAcaoContato?: (leadId: string, tipo: 'whatsapp' | 'ligacao', templateTitulo?: string) => void;
+  onUpdateStatus: (leadId: string, status: Lead['status']) => void;
 }
 
 export const LeadCard: React.FC<LeadCardProps> = ({
@@ -50,245 +18,94 @@ export const LeadCard: React.FC<LeadCardProps> = ({
   onOpenMessageComposer,
   onOpenCallScript,
   onOpenDetails,
-  onUpdateStatus,
-  onRegistrarAcaoContato,
 }) => {
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
-    e.dataTransfer.setData('text/plain', lead.id);
-    e.dataTransfer.effectAllowed = 'move';
+  const scoreInfo = obterInfoScore(lead);
+  const isWhatsAppValido = ehCelularBR(lead.telefonePrincipal);
+
+  // Função para renderizar o ícone de score
+  const renderScoreIcon = () => {
+    if (!scoreInfo || scoreInfo.score < 0) return null;
+    if (scoreInfo.categoria === 'hot') return <Flame className="w-3.5 h-3.5 text-rose-500" />;
+    if (scoreInfo.categoria === 'alvo') return <Flame className="w-3.5 h-3.5 text-emerald-500" />;
+    if (scoreInfo.categoria === 'medio') return <Sun className="w-3.5 h-3.5 text-amber-500" />;
+    return <Snowflake className="w-3.5 h-3.5 text-slate-400" />;
   };
 
-  const isVencido = ehFollowUpVencido(lead);
-  const infoFollowUp = obterInfoFollowUp(lead);
-  const diasAtraso = diasDesdeUltimoContato(lead);
-
-  // 1. Score como dot circular no canto
-  const score = calcularScore(lead);
-  const scoreDotColor =
-    score >= 75
-      ? 'bg-emerald-500'
-      : score >= 45
-      ? 'bg-amber-400'
-      : score >= 0
-      ? 'bg-slate-300'
-      : null;
-
-  // 2. Primeiro nome
-  const primeiroNome = ((lead.nomeContato || (lead as any).nome || '') as string).trim().split(/\s+/)[0] || '';
-
-  // 3. Porte (exibindo 'MEI+' em vez de 'MEI Desenq.')
-  const porteRaw = lead.isMeiDesenquadrado
-    ? 'MEI Desenq.'
-    : lead.isMei
-    ? 'MEI'
-    : 'PJ';
-  const porteExibicao = porteRaw === 'MEI Desenq.' ? 'MEI+' : porteRaw;
-
-  // 3b. Empresa abreviada (para MEI+)
-  const leadEmpresa = (lead as any).empresa || lead.empresaExibicao || '';
-  const leadPorte = (lead as any).porte || (lead.isMeiDesenquadrado ? 'MEI+' : porteRaw);
-  const empresaExibida = abreviarEmpresaMEI(leadEmpresa, leadPorte);
-
-  // 4. Cidade abreviada (sem UF)
-  const cidadeAbv = abreviarCidade(lead.municipio || (lead as any).cidade, lead.uf);
-
-  // 5. Linha de contexto única combinada (sem "· ·" órfão)
-  const segmentos: string[] = [];
-  if (primeiroNome) segmentos.push(primeiroNome);
-  if (porteExibicao) segmentos.push(porteExibicao);
-  if (cidadeAbv) segmentos.push(cidadeAbv);
-  const linhaContexto = segmentos.join(' · ');
-
-  // 6. Telefone formatado
-  const wa = formatarCelularBR(lead.telefonePrincipal || lead.telefonePrincipalFormatado);
-
-  // 7. Ativação & Pontuação
-  const pixCount = lead.pixCount || 0;
-  const maquinaVendas = lead.maquinaVendas || 0;
-  const potencialInfo = potencial(lead);
-  const pontosTotais = potencialInfo.total;
-
-  let pontosAtuais = 0;
-  if (lead.status === 'fechado') {
-    if (contaAtiva(lead)) {
-      pontosAtuais += potencialInfo.conta;
-    }
-    if (maquinaAtiva(lead)) {
-      pontosAtuais += potencialInfo.getnet;
-    }
-    if (lead.fitContratadoEm) {
-      pontosAtuais += 1;
-    }
-  }
-
-  const cadenciaContatos = lead.cadenciaContatos ?? 0;
-
-  const statusAtiv = lead.status === 'fechado' 
-    ? calcularAtivacaoStatus(lead) 
-    : null;
-  const j = lead.status === 'fechado' ? janelaCheia(lead) : null;
-  const completa = contaAtiva(lead) && 
-                   (lead.vendeuMaquina === false || maquinaAtiva(lead));
-  const emRisco = statusAtiv === 'risco' && !completa;
-
   return (
-    <div
-      draggable
-      onDragStart={handleDragStart}
+    <div 
       onClick={() => onOpenDetails(lead)}
-      className={`border shadow-none rounded-lg bg-white transition-all duration-150 p-3 group text-slate-800 cursor-grab active:cursor-grabbing relative w-full ${
-        emRisco 
-          ? 'border-rose-300 bg-rose-50/30 animate-pulse' 
-          : j?.fase === 'M1' && j.diasRestantesM1 <= 10 && !completa
-            ? 'border-amber-300 bg-amber-50/30'
-            : 'border-slate-200/70 hover:border-slate-300 hover:shadow-sm'
-      }`}
+      className="group bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-slate-300 transition-all duration-200 cursor-pointer flex flex-col gap-3"
     >
-      {/* Selo Visual de Follow-up (Absolute, se vencido) */}
-      {isVencido && (
-        <span
-          className={`absolute top-1.5 right-1.5 text-[9px] font-extrabold px-1.5 py-0.5 rounded shadow-2xs z-10 pointer-events-none tracking-tight flex items-center gap-0.5 ${
-            infoFollowUp.status === 'hoje'
-              ? 'bg-amber-500 text-white'
-              : 'bg-rose-600 text-white'
-          }`}
-          title={
-            infoFollowUp.status === 'hoje'
-              ? 'Follow-up agendado para hoje'
-              : `Vencido há ${diasAtraso > 0 ? diasAtraso : 1} dia(s)`
-          }
-        >
-          {infoFollowUp.status === 'hoje'
-            ? 'Hoje'
-            : `Vencido há ${diasAtraso > 0 ? diasAtraso : 1}d`}
-        </span>
-      )}
-
-      {/* Linha 1: Empresa e Score Dot */}
-      <div className={`flex items-center justify-between gap-1.5 min-w-0 ${isVencido ? 'pr-16' : ''}`}>
-        <h4
-          className="font-semibold text-sm text-slate-900 truncate leading-tight hover:text-red-700 cursor-pointer"
-          title={`${empresaExibida} (Clique para ver detalhes)`}
-        >
-          {empresaExibida}
-        </h4>
-
-        {score >= 0 && scoreDotColor && (
-          <span
-            className={`inline-block w-2 h-2 rounded-full ${scoreDotColor} shrink-0`}
-            title={`Score: ${score}/100`}
-          />
-        )}
+      {/* Header do Card */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h4 className="text-sm font-bold text-slate-900 truncate tracking-tight">
+            {lead.empresaExibicao}
+          </h4>
+          <p className="text-xs text-slate-500 truncate font-medium mt-0.5">
+            {lead.nomeContato}
+          </p>
+        </div>
+        
+        {/* Score Badge */}
+        <div className="shrink-0 flex items-center justify-center w-6 h-6 rounded-full bg-slate-50 border border-slate-100">
+          {renderScoreIcon()}
+        </div>
       </div>
 
-      {/* Linha 2: Contexto Único (contato · porte · cidade/UF) */}
-      {linhaContexto && (
-        <p className="text-xs text-slate-500 truncate mt-1 leading-tight">
-          {linhaContexto}
-        </p>
-      )}
+      {/* Informações Extras */}
+      <div className="flex items-center gap-3 text-[11px] text-slate-500 font-medium">
+        <div className="flex items-center gap-1">
+          <MapPin className="w-3 h-3 text-slate-400" />
+          <span className="truncate max-w-[80px]">{lead.municipio || 'N/A'}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Building2 className="w-3 h-3 text-slate-400" />
+          <span>{lead.cnaeDescricao ? lead.cnaeDescricao.split(' ')[0] : 'CNAE'}</span>
+        </div>
+      </div>
 
-      {/* Linha 3: Telefone Celular formatado com link WhatsApp */}
-      {wa && (
-        <div className="mt-1 flex items-center gap-1.5 leading-none">
-          <a
-            href={`https://wa.me/55${(lead.telefonePrincipal || lead.telefonePrincipalFormatado || '').replace(/\D/g, '')}?text=${encodeURIComponent(`Olá ${primeiroNome || ''}, tudo bem?`)}`}
-            target="_blank"
-            rel="noopener noreferrer"
+      {/* Footer do Card (Ações Rápidas) */}
+      <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 mt-auto">
+        <div className="flex items-center gap-1.5">
+          {/* Botão WhatsApp */}
+          <button
             onClick={(e) => {
               e.stopPropagation();
-              if (onRegistrarAcaoContato) {
-                onRegistrarAcaoContato(lead.id, 'whatsapp', 'WhatsApp Rápido');
-              } else {
-                window.dispatchEvent(
-                  new CustomEvent('ictx:registrarAcaoContato', {
-                    detail: { leadId: lead.id, tipo: 'whatsapp', templateTitulo: 'WhatsApp Rápido' },
-                  })
-                );
-              }
+              onOpenMessageComposer(lead);
             }}
-            className="inline-flex items-center gap-1 text-xs font-mono text-slate-500 hover:text-emerald-600 transition-colors cursor-pointer group/zap"
-            title="Abrir WhatsApp e registrar contato"
-          >
-            <MessageCircle className="w-3 h-3 text-slate-400 group-hover/zap:text-emerald-500 shrink-0" />
-            <span className="truncate group-hover/zap:underline">{wa}</span>
-          </a>
-        </div>
-      )}
-
-      {/* Linha 4: Indicadores de texto ultralimpos (sem colchetes) e ícones de ativação (sem botões de zap/ligar) */}
-      <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-slate-100 gap-1.5">
-        {/* Esquerda: pontosAtuais/pontosTotais cadenciaContatos/3 (sem colchetes) */}
-        <div className="flex items-center gap-2 text-xs font-mono text-slate-500 font-medium select-none">
-          <span title={`Pontos: ${pontosAtuais} de ${pontosTotais} pontos possíveis`}>
-            {pontosAtuais}/{pontosTotais}
-          </span>
-          <span title={`Cadência: ${cadenciaContatos} de 3 contatos realizados`}>
-            {cadenciaContatos}/3
-          </span>
-        </div>
-
-        {/* Direita: Ativações PIX e Máquina */}
-        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          {/* PIX */}
-          <span
-            title={
-              lead.status !== 'fechado'
-                ? 'PIX — disponível quando credenciado'
-                : pixCount >= 3
-                  ? `PIX ${pixCount}/3 — ativo`
-                  : `PIX ${pixCount}/3 — pendente`
-            }
-            className={`pointer-events-none cursor-default w-6 h-6 flex items-center justify-center rounded-md ${
-              lead.status !== 'fechado'
-                ? 'text-slate-300 opacity-60'
-                : pixCount >= 3
-                  ? 'text-emerald-600'
-                  : pixCount > 0
-                    ? 'text-amber-500'
-                    : 'text-slate-400'
+            className={`p-1.5 rounded-lg transition-colors ${
+              isWhatsAppValido 
+                ? 'text-emerald-600 hover:bg-emerald-50' 
+                : 'text-slate-300 cursor-not-allowed'
             }`}
+            title={isWhatsAppValido ? "Abrir WhatsApp" : "Sem celular válido"}
           >
-            <PixIcon className="w-3.5 h-3.5" />
-          </span>
-
-          {/* Máquina */}
-          <span
-            title={
-              lead.status !== 'fechado'
-                ? 'Máquina — disponível quando credenciado'
-                : maquinaVendas >= 500
-                  ? `Máq R$${maquinaVendas} — ativa`
-                  : `Máq R$${maquinaVendas} — pendente`
-            }
-            className={`pointer-events-none cursor-default w-6 h-6 flex items-center justify-center rounded-md ${
-              lead.status !== 'fechado'
-                ? 'text-slate-300 opacity-60'
-                : maquinaVendas >= 500
-                  ? 'text-emerald-600'
-                  : maquinaVendas > 0
-                    ? 'text-amber-500'
-                    : 'text-slate-400'
-            }`}
+            <MessageCircle className="w-4 h-4" />
+          </button>
+          
+          {/* Botão Ligação */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenCallScript(lead);
+            }}
+            className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+            title="Ligar / Roteiro"
           >
-            <CreditCard className="w-3.5 h-3.5" />
-          </span>
+            <PhoneCall className="w-4 h-4" />
+          </button>
+        </div>
 
-          {/* Contagem de dias na linha de ativação */}
-          {j && lead.status === 'fechado' && (
-            <span className={`text-[9px] font-bold ml-1 ${
-              emRisco 
-                ? 'text-rose-600'
-                : j.fase === 'M2'
-                  ? 'text-amber-600'
-                  : 'text-slate-500'
-            }`}>
-              {j.fase === 'M0' ? `M0 · ${j.diasRestantesM1}d`
-               : j.fase === 'M1' ? `M1 · ${j.diasRestantesM1}d`
-               : j.fase === 'M2' ? `M2 · ${j.diasRestantesM2}d`
-               : 'exp.'}
+        {/* Indicador de Cadência e Data */}
+        <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-400">
+          {(lead.cadenciaContatos ?? 0) > 0 && (
+            <span className="flex items-center gap-1 bg-slate-50 px-1.5 py-0.5 rounded-md border border-slate-200/60">
+              <Clock className="w-2.5 h-2.5" />
+              {lead.cadenciaContatos}/3
             </span>
           )}
+          <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-500 transition-colors" />
         </div>
       </div>
     </div>
