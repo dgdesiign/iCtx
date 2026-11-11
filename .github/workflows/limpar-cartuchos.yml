@@ -1,0 +1,30 @@
+name: Faxina de Cartuchos Antigos
+on:
+  workflow_dispatch: # Permite rodar manualmente para testar
+  schedule:
+    - cron: '0 3 * * 0' # Roda todo domingo às 3h da manhã
+
+permissions:
+  contents: write
+
+jobs:
+  limpar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Baixar o código
+        uses: actions/checkout@v4
+
+      - name: 🧹 Apagar arquivos com mais de 30 dias
+        run: |
+          echo "Procurando arquivos .xlsx antigos na pasta cartuchos/..."
+          # O comando abaixo acha arquivos .xlsx na pasta cartuchos que foram modificados há mais de 30 dias (-mtime +30) e os deleta.
+          find cartuchos/ -name "*.xlsx" -type f -mtime +30 -print -delete
+
+      - name: 💾 Salvar a limpeza no GitHub
+        run: |
+          git config --global user.name 'Robo iCtx - Faxineiro'
+          git config --global user.email 'robo@ictx.com'
+          git add cartuchos/
+          # O "|| echo" garante que se não houver nada para apagar, o robô não dê erro.
+          git commit -m "🧹 Faxina: Cartuchos com mais de 30 dias removidos [skip ci]" || echo "Nenhum cartucho antigo para apagar hoje."
+          git push
