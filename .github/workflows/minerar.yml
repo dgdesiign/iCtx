@@ -1,11 +1,11 @@
 name: Minerador 24/7
 on:
-  workflow_dispatch: # Permite rodar manualmente clicando num botão
+  workflow_dispatch:
   schedule:
-    - cron: '0 5 * * *' # Roda todos os dias às 2h da manhã (horário de Brasília)
+    - cron: '0 5 * * *'
 
 permissions:
-  contents: write # Permite que o robô salve o Excel no repositório
+  contents: write
 
 jobs:
   minerar:
@@ -31,7 +31,6 @@ jobs:
         run: |
           git config --global user.name 'Robo iCtx'
           git config --global user.email 'robo@ictx.com'
-          git add *.xlsx
-          git add bot/progresso.json
-          git commit -m "🤖 Novo cartucho gerado automaticamente [skip ci]"
+          git add -A
+          git commit -m "🤖 Novo cartucho gerado automaticamente [skip ci]" || echo "Nada para commitar"
           git push
