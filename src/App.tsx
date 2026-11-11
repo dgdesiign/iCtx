@@ -550,9 +550,15 @@ export default function App() {
     if (alterado) setLeads(leadsBackfillados);
   }, []);
 
-  // --- FUNÇÃO DE ENRIQUECIMENTO EM LOTE ATUALIZADA ---
+  // --- FUNÇÃO DE ENRIQUECIMENTO EM LOTE CORRIGIDA ---
   const handleBatchEnrich = async () => {
-    const leadsParaEnriquecer = leads.filter(l => !l.cnaeCodigo || l.razaoSocial === 'Empresa');
+    // A MUDANÇA ESTÁ AQUI: Pega qualquer lead que esteja sem telefone, sem CNAE ou com nome genérico
+    const leadsParaEnriquecer = leads.filter(l => 
+      !l.telefonePrincipal || 
+      !l.cnaeCodigo || 
+      l.razaoSocial === 'Empresa'
+    );
+
     if (leadsParaEnriquecer.length === 0) {
       alert('Nenhum lead pendente de enriquecimento.');
       return;
@@ -567,7 +573,6 @@ export default function App() {
       try {
         const dados = await consultarCnpj(lead.cnpj);
         if (dados) {
-          // Extrai o telefone principal e secundário da BrasilAPI
           const telefonePrincipal = dados.ddd_telefone_1 ? limparDigitos(dados.ddd_telefone_1) : lead.telefonePrincipal;
           const telefoneSecundario = dados.ddd_telefone_2 ? limparDigitos(dados.ddd_telefone_2) : lead.telefoneSecundario;
 
@@ -585,10 +590,10 @@ export default function App() {
             uf: dados.uf || lead.uf,
             cep: dados.cep || lead.cep,
             dataAbertura: dados.data_inicio_atividade || lead.dataAbertura,
-            telefonePrincipal: telefonePrincipal, // ATUALIZADO AQUI
-            telefonePrincipalFormatado: formatarTelefone(telefonePrincipal), // ATUALIZADO AQUI
-            telefoneSecundario: telefoneSecundario || undefined, // ATUALIZADO AQUI
-            telefoneSecundarioFormatado: telefoneSecundario ? formatarTelefone(telefoneSecundario) : undefined, // ATUALIZADO AQUI
+            telefonePrincipal: telefonePrincipal,
+            telefonePrincipalFormatado: formatarTelefone(telefonePrincipal),
+            telefoneSecundario: telefoneSecundario || undefined,
+            telefoneSecundarioFormatado: telefoneSecundario ? formatarTelefone(telefoneSecundario) : undefined,
           };
           handleUpdateLead(leadAtualizado);
         }
