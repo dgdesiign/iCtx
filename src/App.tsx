@@ -550,103 +550,122 @@ export default function App() {
     if (alterado) setLeads(leadsBackfillados);
   }, []);
 
-  // --- FUNÇÃO DE ENRIQUECIMENTO INTELIGENTE (RESILIENTE E COM PAUSA) ---
+  // --- FUNÇÃO DE ENRIQUECIMENTO COM FILA PERSISTENTE (A PROVA DE F5) ---
   const handleBatchEnrich = async () => {
-    const leadsParaEnriquecer = leads.filter(l => {
-      if (l.status === 'fechado' || l.status === 'descartado') return false;
-      
-      const tel1 = limparDigitos(l.telefonePrincipal || '');
-      const tel2 = limparDigitos(l.telefoneSecundario || '');
-      
-      const isCelular1 = tel1.length === 11 && tel1[2] === '9';
-      const isCelular2 = tel2.length === 11 && tel2[2] === '9';
-      
-      const temCelular = isCelular1 || isCelular2;
-      
-      return !temCelular || !l.cnaeCodigo || l.razaoSocial === 'Empresa';
-    });
+    let filaIds: string[] = [];
+    const filaSalva = localStorage.getItem('ictx_enrich_fila');
+    
+    if (filaSalva) {
+      filaIds = JSON.parse(filaSalva);
+    } else {
+      const leadsParaEnriquecer = leads.filter(l => {
+        if (l.status === 'fechado' || l.status === 'descartado') return false;
+        const tel1 = limparDigitos(l.telefonePrincipal || '');
+        const tel2 = limparDigitos(l.telefoneSecundario || '');
+        const isCelular1 = tel1.length === 11 && tel1[2] === '9';
+        const isCelular2 = tel2.length === 11 && tel2[2] === '9';
+        const temCelular = isCelular1 || isCelular2;
+        return !temCelular || !l.cnaeCodigo || l.razaoSocial === 'Empresa';
+      });
 
-    if (leadsParaEnriquecer.length === 0) {
-      alert('Nenhum lead pendente de enriquecimento.');
+      if (leadsParaEnriquecer.length === 0) {
+        alert('Nenhum lead pendente de enriquecimento.');
+        return;
+      }
+      
+      filaIds = leadsParaEnriquecer.map(l => l.id);
+      localStorage.setItem('ictx_enrich_fila', JSON.stringify(filaIds));
+      localStorage.setItem('ictx_enrich_total', filaIds.length.toString());
+    }
+
+    if (filaIds.length === 0) {
+      alert('Fila de enriquecimento concluída!');
+      localStorage.removeItem('ictx_enrich_fila');
+      localStorage.removeItem('ictx_enrich_total');
       return;
     }
 
+    const totalOriginal = parseInt(localStorage.getItem('ictx_enrich_total') || filaIds.length.toString(), 10);
+    
     setIsEnriching(true);
-    setEnrichTotal(leadsParaEnriquecer.length);
-    setEnrichProgress(0);
+    setEnrichTotal(totalOriginal);
+    setEnrichProgress(totalOriginal - filaIds.length);
 
-    for (let i = 0; i < leadsParaEnriquecer.length; i++) {
-      const lead = leadsParaEnriquecer[i];
-      try {
-        const dados = await consultarCnpj(lead.cnpj);
-        if (dados) {
-          let tel1 = dados.ddd_telefone_1 ? limparDigitos(dados.ddd_telefone_1) : '';
-          let tel2 = dados.ddd_telefone_2 ? limparDigitos(dados.ddd_telefone_2) : '';
+    while (filaIds.length > 0) {
+      const leadId = filaIds[0];
+      const lead = leads.find(l => l.id === leadId);
 
-          let isCelular1 = tel1.length === 11 && tel1[2] === '9';
-          let isCelular2 = tel2.length === 11 && tel2[2] === '9';
+      if (lead) {
+        try {
+          const dados = await consultarCnpj(lead.cnpj);
+          if (dados) {
+            let tel1 = dados.ddd_telefone_1 ? limparDigitos(dados.ddd_telefone_1) : '';
+            let tel2 = dados.ddd_telefone_2 ? limparDigitos(dados.ddd_telefone_2) : '';
+            let isCelular1 = tel1.length === 11 && tel1[2] === '9';
+            let isCelular2 = tel2.length === 11 && tel2[2] === '9';
 
-          let novoTelPrincipal = lead.telefonePrincipal;
-          let novoTelSecundario = lead.telefoneSecundario;
+            let novoTelPrincipal = lead.telefonePrincipal;
+            let novoTelSecundario = lead.telefoneSecundario;
 
-          if (isCelular1) {
-            novoTelPrincipal = tel1;
-            if (isCelular2 || tel2.length >= 10) novoTelSecundario = tel2;
-          } else if (isCelular2) {
-            novoTelPrincipal = tel2;
-            if (tel1.length >= 10) novoTelSecundario = tel1;
-          } else {
-            if (tel1 && (!lead.telefonePrincipal || lead.telefonePrincipal.length < 10)) novoTelPrincipal = tel1;
-            if (tel2 && !lead.telefoneSecundario) novoTelSecundario = tel2;
+            if (isCelular1) {
+              novoTelPrincipal = tel1;
+              if (isCelular2 || tel2.length >= 10) novoTelSecundario = tel2;
+            } else if (isCelular2) {
+              novoTelPrincipal = tel2;
+              if (tel1.length >= 10) novoTelSecundario = tel1;
+            } else {
+              if (tel1 && (!lead.telefonePrincipal || lead.telefonePrincipal.length < 10)) novoTelPrincipal = tel1;
+              if (tel2 && !lead.telefoneSecundario) novoTelSecundario = tel2;
+            }
+
+            const leadAtualizado: Lead = {
+              ...lead,
+              razaoSocial: dados.razao_social || lead.razaoSocial,
+              nomeFantasia: dados.nome_fantasia || lead.nomeFantasia,
+              empresaExibicao: dados.nome_fantasia || dados.razao_social || lead.empresaExibicao,
+              cnaeCodigo: dados.cnae_fiscal ? String(dados.cnae_fiscal) : lead.cnaeCodigo,
+              cnaeDescricao: dados.cnae_fiscal_descricao || lead.cnaeDescricao,
+              logradouro: dados.logradouro || lead.logradouro,
+              numero: dados.numero || lead.numero,
+              bairro: dados.bairro || lead.bairro,
+              municipio: dados.municipio || lead.municipio,
+              uf: dados.uf || lead.uf,
+              cep: dados.cep || lead.cep,
+              dataAbertura: dados.data_inicio_atividade || lead.dataAbertura,
+              telefonePrincipal: novoTelPrincipal,
+              telefonePrincipalFormatado: formatarTelefone(novoTelPrincipal),
+              telefoneSecundario: novoTelSecundario || undefined,
+              telefoneSecundarioFormatado: novoTelSecundario ? formatarTelefone(novoTelSecundario) : undefined,
+            };
+            handleUpdateLead(leadAtualizado);
           }
-
-          const leadAtualizado: Lead = {
-            ...lead,
-            razaoSocial: dados.razao_social || lead.razaoSocial,
-            nomeFantasia: dados.nome_fantasia || lead.nomeFantasia,
-            empresaExibicao: dados.nome_fantasia || dados.razao_social || lead.empresaExibicao,
-            cnaeCodigo: dados.cnae_fiscal ? String(dados.cnae_fiscal) : lead.cnaeCodigo,
-            cnaeDescricao: dados.cnae_fiscal_descricao || lead.cnaeDescricao,
-            logradouro: dados.logradouro || lead.logradouro,
-            numero: dados.numero || lead.numero,
-            bairro: dados.bairro || lead.bairro,
-            municipio: dados.municipio || lead.municipio,
-            uf: dados.uf || lead.uf,
-            cep: dados.cep || lead.cep,
-            dataAbertura: dados.data_inicio_atividade || lead.dataAbertura,
-            telefonePrincipal: novoTelPrincipal,
-            telefonePrincipalFormatado: formatarTelefone(novoTelPrincipal),
-            telefoneSecundario: novoTelSecundario || undefined,
-            telefoneSecundarioFormatado: novoTelSecundario ? formatarTelefone(novoTelSecundario) : undefined,
-          };
-          handleUpdateLead(leadAtualizado);
+        } catch (error) {
+          console.warn(`Erro ao enriquecer ${lead.cnpj}:`, error);
         }
-      } catch (error) {
-        console.warn(`Erro ao enriquecer ${lead.cnpj}:`, error);
       }
-      setEnrichProgress(prev => prev + 1);
-      
-      // Salva o progresso no localStorage para não perder se o usuário atualizar a página
-      localStorage.setItem('ictx_enrich_progress', JSON.stringify({ atual: i + 1, total: leadsParaEnriquecer.length }));
 
-      // Pausa de 20 segundos
-      await new Promise(r => setTimeout(r, 20000));
+      // Remove o lead processado (ou com erro) do topo da fila e salva
+      filaIds.shift();
+      localStorage.setItem('ictx_enrich_fila', JSON.stringify(filaIds));
+      
+      setEnrichProgress(totalOriginal - filaIds.length);
+
+      if (filaIds.length > 0) {
+        await new Promise(r => setTimeout(r, 20000));
+      }
     }
 
     setIsEnriching(false);
-    localStorage.removeItem('ictx_enrich_progress');
-    alert('Enriquecimento em lote concluído!');
+    localStorage.removeItem('ictx_enrich_total');
+    alert('Enriquecimento em lote concluído com sucesso!');
   };
 
   // Retoma o enriquecimento se a página for atualizada
   useEffect(() => {
-    const progSalvo = localStorage.getItem('ictx_enrich_progress');
-    if (progSalvo && !isEnriching) {
-      const p = JSON.parse(progSalvo);
-      if (p.atual < p.total) {
-        console.log('Retomando enriquecimento de onde parou...');
-        handleBatchEnrich();
-      }
+    const filaSalva = localStorage.getItem('ictx_enrich_fila');
+    if (filaSalva && !isEnriching) {
+      console.log('Retomando enriquecimento da fila salva...');
+      handleBatchEnrich();
     }
   }, []);
 
