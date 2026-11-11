@@ -1,0 +1,37 @@
+name: Minerador 24/7
+on:
+  workflow_dispatch: # Permite rodar manualmente clicando num botão
+  schedule:
+    - cron: '0 5 * * *' # Roda todos os dias às 2h da manhã (horário de Brasília)
+
+permissions:
+  contents: write # Permite que o robô salve o Excel no repositório
+
+jobs:
+  minerar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Baixar o código
+        uses: actions/checkout@v4
+
+      - name: 🟢 Configurar o Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 📦 Instalar bibliotecas
+        run: npm install exceljs
+
+      - name: 🤖 Rodar o Minerador
+        env:
+          CASADOSDADOS_API_KEY: ${{ secrets.CASADOSDADOS_API_KEY }}
+        run: node bot/minerar.js
+
+      - name: 💾 Salvar o Cartucho no GitHub
+        run: |
+          git config --global user.name 'Robo iCtx'
+          git config --global user.email 'robo@ictx.com'
+          git add *.xlsx
+          git add bot/progresso.json
+          git commit -m "🤖 Novo cartucho gerado automaticamente [skip ci]"
+          git push
