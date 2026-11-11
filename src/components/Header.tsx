@@ -1,6 +1,5 @@
 import React from 'react';
 import { Lead } from '../types/crm';
-import { NotificationStatus } from '../services/notificationService';
 import {
   FileSpreadsheet,
   Upload,
@@ -27,16 +26,10 @@ interface HeaderProps {
   onOpenInstallModal: () => void;
   onOpenGoogleSheets: () => void;
   isGoogleConnected: boolean;
-  isGoogleSyncing: boolean;
-  dirtyCount: number;
-  pendingSyncCount: number;
   isSupervisor: boolean;
-  usuarioRole: 'supervisor' | 'executivo';
   onOpenSupervisorDashboard: () => void;
   onOpenMetas: () => void;
-  onToggleRole: () => void;
   onOpenNotifications: () => void;
-  notificationStatus: NotificationStatus;
   followupsHojeCount: number;
 }
 
@@ -50,13 +43,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenInstallModal,
   onOpenGoogleSheets,
   isGoogleConnected,
-  dirtyCount,
-  pendingSyncCount,
   isSupervisor,
-  usuarioRole,
   onOpenSupervisorDashboard,
   onOpenMetas,
-  onToggleRole,
   onOpenNotifications,
   followupsHojeCount,
 }) => {
