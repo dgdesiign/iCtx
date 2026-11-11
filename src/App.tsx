@@ -31,13 +31,13 @@ import { GoogleSheetsSyncModal } from './components/GoogleSheetsSyncModal';
 import { NotificationModal } from './components/NotificationModal';
 import { MiningDashboard } from './components/MiningDashboard';
 import { MiningFloatingWidget } from './components/MiningFloatingWidget';
+import { CartuchosModal } from './components/CartuchosModal'; // NOVO IMPORT
 import { useMiningStatus } from './hooks/useMiningStatus';
 import {
   getNotificationPermissionStatus,
   setupDaily9AmReminder,
   NotificationStatus,
 } from './services/notificationService';
-import { consultarCnpj, calcularIdadeEmpresa } from './services/cnpjService';
 import {
   Building2,
   Sparkles,
@@ -106,7 +106,6 @@ export default function App() {
   const [leads, setLeads] = useState<Lead[]>(() => {
     const salvos = carregarLeads();
     if (salvos.length > 0) {
-      // Descarta incondicionalmente leads de exemplo (/^lead_[1-9]\d?$/)
       return salvos
         .filter((l) => l && l.id && !isSampleLeadId(l.id))
         .map((l) => {
@@ -153,6 +152,7 @@ export default function App() {
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isSingleLeadOpen, setIsSingleLeadOpen] = useState(false);
   const [isMiningOpen, setIsMiningOpen] = useState(false);
+  const [isCartuchosOpen, setIsCartuchosOpen] = useState(false); // NOVO ESTADO
   const miningStatus = useMiningStatus();
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
@@ -160,17 +160,7 @@ export default function App() {
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
   const [isBannerExpanded, setIsBannerExpanded] = useState(false);
 
-  // Estados de Enriquecimento em Lote (Robô Receita Federal)
-  const [isEnriching, setIsEnriching] = useState(false);
-  const [enrichProgress, setEnrichProgress] = useState(0);
-  const [enrichTotal, setEnrichTotal] = useState(0);
-
-  const leadsRef = useRef(leads);
-  useEffect(() => {
-    leadsRef.current = leads;
-  }, [leads]);
-
-  // Perfil do Usuário Ativo (Sprint 5)
+  // Perfil do Usuário Ativo
   const [usuarioAtivo, setUsuarioAtivo] = useState<{
     nome: string;
     email: string;
@@ -278,7 +268,7 @@ export default function App() {
     }).length;
   }, [leads, currentUser]);
 
-  // Contagem de pendências de sync e helper de retry (S-ATIVAÇÃO-A)
+  // Contagem de pendências de sync e helper de retry
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
 
   function calcularPendenciasLocais(): number {
@@ -304,10 +294,6 @@ export default function App() {
       setPendingSyncCount(0);
     } catch (e: any) {
       if (e?.message === 'TOKEN_EXPIRADO') {
-        // NÃO chamar tentarReautenticar() automaticamente
-        // (popup é bloqueado pelo navegador fora de user gesture)
-        // Apenas marcar como pendente. Usuário reconecta manualmente 
-        // ao clicar no badge vermelho do Header.
         setPendingSyncCount((prev) => prev + 1);
         console.warn('[sync] token expirado — clique no badge vermelho do Header para reconectar');
       } else {
@@ -351,7 +337,6 @@ export default function App() {
         setCurrentUser(user);
         setCachedAccessToken(token);
 
-        // Se houver planilha conectada e o 1º merge ainda não ocorreu nesta sessão, executa merge seguro
         if (!firstMergeDoneRef.current && spreadsheet?.id) {
           try {
             setIsGoogleSyncing(true);
@@ -403,7 +388,7 @@ export default function App() {
     salvarLeads(leads);
   }, [leads]);
 
-  // Auto-salvamento debounced no Google Sheets: habilitado APENAS após o 1º merge na sessão completar
+  // Auto-salvamento debounced no Google Sheets
   useEffect(() => {
     if (isInitialMountRef.current) {
       isInitialMountRef.current = false;
@@ -442,12 +427,12 @@ export default function App() {
         isSavingToSheetRef.current = false;
         setIsGoogleSyncing(false);
       }
-    }, 3000); // Debounce de 3s conforme REGRAS.md §3
+    }, 3000);
 
     return () => clearTimeout(timeout);
   }, [leads, currentUser, spreadsheet?.id]);
 
-  // Descarrega imediatamente saves pendentes ao fechar ou ocultar a página se a sessão for válida
+  // Descarrega imediatamente saves pendentes
   useEffect(() => {
     const flushPendingSave = async () => {
       if (!firstMergeDoneRef.current || !pendingSaveLeadsRef.current || !spreadsheet?.id) return;
@@ -488,7 +473,7 @@ export default function App() {
     salvarTemplates(templates);
   }, [templates]);
 
-  // Migração idempotente por lead: copia dataAbertura (fundação Receita) para cnpjInicio quando não fechado
+  // Migração idempotente por lead
   useEffect(() => {
     setLeads((prev) => {
       let alterado = false;
@@ -530,17 +515,17 @@ export default function App() {
       });
       return alterado ? migrados : prev;
     });
-  }, []); // roda só no mount
+  }, []);
 
-  // useEffect B — Saneamento de telefone/nome/empresa (roda sempre)
+  // useEffect B — Saneamento de telefone/nome/empresa
   useEffect(() => {
     const leadsSaneados = leads.map((l) => autocorrigeLead(l));
     if (JSON.stringify(leadsSaneados) !== JSON.stringify(leads)) {
       setLeads(leadsSaneados);
     }
-  }, []); // roda só no mount (leads muda depois via outros handlers)
+  }, []);
 
-  // useEffect C — Migration de reparo para leads com pixCount>=3 mas sem contaAtivaEm
+  // useEffect C — Migration de reparo
   useEffect(() => {
     const MIGRATION_FLAG = 'ictx_migration_ativa_repair_done';
     if (localStorage.getItem(MIGRATION_FLAG) === 'true') return;
@@ -549,12 +534,10 @@ export default function App() {
     const leadsReparados = leads.map((l) => {
       const patches: Partial<Lead> = {};
 
-      // Reparo conta: pixCount>=3 sem contaAtivaEm
       if ((l.pixCount ?? 0) >= 3 && !l.contaAtivaEm) {
         patches.contaAtivaEm = l.dataAbertura || l.dataFechamento?.slice(0, 10) || new Date().toISOString().slice(0, 10);
       }
 
-      // Reparo máquina: maquinaVendas>=500 sem maquinaAtivaEm
       if ((l.maquinaVendas ?? 0) >= 500 && !l.maquinaAtivaEm) {
         patches.maquinaAtivaEm = l.dataAbertura || l.dataFechamento?.slice(0, 10) || new Date().toISOString().slice(0, 10);
       }
@@ -568,15 +551,12 @@ export default function App() {
 
     if (alterado) {
       setLeads(leadsReparados);
-      console.log(
-        '[repair ativacao] leads reparados:',
-        leadsReparados.filter((r, i) => r.contaAtivaEm !== leads[i]?.contaAtivaEm || r.maquinaAtivaEm !== leads[i]?.maquinaAtivaEm).length
-      );
+      console.log('[repair ativacao] leads reparados:', leadsReparados.filter((r, i) => r.contaAtivaEm !== leads[i]?.contaAtivaEm || r.maquinaAtivaEm !== leads[i]?.maquinaAtivaEm).length);
     }
     localStorage.setItem(MIGRATION_FLAG, 'true');
   }, []);
 
-  // Backfill dataFechamento para leads em "fechado" (ITEM 1 — S-DINHEIRO-B)
+  // Backfill dataFechamento
   useEffect(() => {
     let alterado = false;
     const leadsBackfillados = leads.map(l => {
@@ -590,7 +570,7 @@ export default function App() {
       return l;
     });
     if (alterado) setLeads(leadsBackfillados);
-  }, []); // só mount
+  }, []);
 
   // Handlers de status e histórico
   const handleUpdateLeadStatus = (
@@ -602,10 +582,8 @@ export default function App() {
       const atualizados = prevLeads.map((l) => {
         if (l.id !== leadId) return l;
 
-        // Regra de cadência centralizada (Sprint 1)
         const leadComCadencia = aplicarMudancaStatusCadencia(l, novoStatus);
 
-        // Se mudou para fechado e ainda não tem dataFechamento, trava com timestamp atual
         let leadAtualizado = leadComCadencia;
         if (novoStatus === 'fechado' && !leadAtualizado.dataFechamento) {
           leadAtualizado = {
@@ -632,7 +610,6 @@ export default function App() {
         };
       });
 
-      // Se logInfo presente e planilha conectada, registra também na aba HistoricoContatos do Google Sheets
       if (logInfo && spreadsheet) {
         const leadAlvo = prevLeads.find((x) => x.id === leadId);
         if (leadAlvo) {
@@ -659,7 +636,6 @@ export default function App() {
       return atualizados;
     });
 
-    // Dispara auto-save com retry se conectado e merge inicial concluído (S-ATIVAÇÃO-A)
     if (currentUser && spreadsheet?.id && firstMergeDoneRef.current) {
       executarComRetry(async () => {
         const token = await getAccessToken();
@@ -673,7 +649,6 @@ export default function App() {
     }
   };
 
-  // Registro centralizado de ação de contato (Sprint 9.1 — WhatsApp / Ligação / Tarja Fantasma)
   const registrarAcaoContato = (
     leadId: string,
     tipo: 'whatsapp' | 'ligacao',
@@ -742,7 +717,6 @@ export default function App() {
       });
     }
 
-    // Auto-save se Google Sheets conectado
     if (currentUser && spreadsheet?.id && firstMergeDoneRef.current) {
       executarComRetry(async () => {
         const token = await getAccessToken();
@@ -919,132 +893,6 @@ export default function App() {
     }
   };
 
-  const handleBatchEnrich = async () => {
-    if (isEnriching) return;
-
-    // Filtra leads onde razaoSocial === 'Empresa' OU !lead.cnaeCodigo
-    const pendentes = leads.filter(
-      (l) => l.cnpj && (l.razaoSocial === 'Empresa' || !l.cnaeCodigo || l.razaoSocial.trim() === '')
-    );
-
-    if (pendentes.length === 0) {
-      try {
-        alert('Nenhum lead pendente de enriquecimento');
-      } catch (e) {
-        console.log('Nenhum lead pendente de enriquecimento');
-      }
-      return;
-    }
-
-    setIsEnriching(true);
-    setEnrichTotal(pendentes.length);
-    setEnrichProgress(0);
-
-    for (let i = 0; i < pendentes.length; i++) {
-      const item = pendentes[i];
-
-      // Pula para o próximo se o lead já foi enriquecido no meio do processo
-      const leadAtual = leadsRef.current.find((l) => l.id === item.id) || item;
-      if (
-        leadAtual.razaoSocial &&
-        leadAtual.razaoSocial !== 'Empresa' &&
-        leadAtual.razaoSocial.trim() !== '' &&
-        leadAtual.cnaeCodigo
-      ) {
-        setEnrichProgress(i + 1);
-        continue;
-      }
-
-      const cnpjLimpo = (leadAtual.cnpj || leadAtual.cnpjFormatado || '').replace(/\D/g, '');
-      if (!cnpjLimpo || cnpjLimpo.length !== 14) {
-        setEnrichProgress(i + 1);
-        continue;
-      }
-
-      try {
-        const dados = await consultarCnpj(cnpjLimpo);
-        if (dados) {
-          const razaoSocial = dados.razao_social || leadAtual.razaoSocial || '';
-          const nomeFantasia = dados.nome_fantasia || leadAtual.nomeFantasia || '';
-          const empresaExibicao = dados.nome_fantasia || dados.razao_social || leadAtual.empresaExibicao || '';
-          const cnaeCodigo =
-            dados.cnae_fiscal !== undefined && dados.cnae_fiscal !== null
-              ? String(dados.cnae_fiscal)
-              : leadAtual.cnaeCodigo;
-          const cnaeDescricao = dados.cnae_fiscal_descricao || leadAtual.cnaeDescricao;
-          const logradouro = dados.logradouro || leadAtual.logradouro;
-          const numero = dados.numero || leadAtual.numero;
-          const bairro = dados.bairro || leadAtual.bairro;
-          const municipio = dados.municipio || leadAtual.municipio || leadAtual.cidade;
-          const uf = dados.uf || leadAtual.uf;
-          const cep = dados.cep || leadAtual.cep;
-          const capitalSocial = dados.capital_social ?? leadAtual.capitalSocial;
-          const dataAbertura = dados.data_inicio_atividade || leadAtual.dataAbertura;
-          const porte = (dados as any).porte ?? (leadAtual as any).porte;
-
-          const atualizado: Lead = {
-            ...leadAtual,
-            razaoSocial,
-            nomeFantasia,
-            empresaExibicao,
-            cnaeCodigo,
-            cnaeDescricao,
-            logradouro,
-            numero,
-            bairro,
-            municipio,
-            uf,
-            cep,
-            capitalSocial,
-            dataAbertura,
-            ...((dados as any).opcao_pelo_simei !== undefined
-              ? { isMei: Boolean((dados as any).opcao_pelo_simei) }
-              : {}),
-            ...((dados as any).qsa && Array.isArray((dados as any).qsa) && (dados as any).qsa.length > 0
-              ? {
-                  socios: (dados as any).qsa.map((s: any) => ({
-                    nome: s.nome_socio || s.nome_rep_legal || '',
-                    qualificacao: s.qualificacao_socio || '',
-                  })),
-                }
-              : {}),
-            ...((dados as any).natureza_juridica
-              ? { naturezaJuridica: (dados as any).natureza_juridica }
-              : {}),
-            ...(porte ? ({ porte } as any) : {}),
-          };
-
-          if (dataAbertura) {
-            const calcIdade = calcularIdadeEmpresa(dataAbertura);
-            atualizado.idadeEmpresa = calcIdade.texto;
-            atualizado.idadeAnos = calcIdade.anos;
-            if (!atualizado.cnpjInicio) {
-              atualizado.cnpjInicio = dataAbertura;
-            }
-          }
-
-          handleUpdateLead(atualizado);
-        }
-      } catch (err) {
-        console.warn(`[BatchEnrich] Falha ao consultar CNPJ ${cnpjLimpo}:`, err);
-      }
-
-      setEnrichProgress(i + 1);
-
-      // CRUCIAL: 20s de delay para respeitar o rate limit da BrasilAPI
-      if (i < pendentes.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 20000));
-      }
-    }
-
-    setIsEnriching(false);
-    try {
-      alert('Enriquecimento em lote concluído!');
-    } catch (e) {
-      console.log('Enriquecimento em lote concluído!');
-    }
-  };
-
   const handleOpenAtivacao = (lead: Lead) => {
     setLeadParaMensagem(null);
     setLeadParaLigacao(null);
@@ -1158,7 +1006,6 @@ export default function App() {
         cnaeCodigo: raw.cnaeCodigo ? String(raw.cnaeCodigo) : undefined,
         cnaeDescricao: raw.cnaeDescricao || raw.cnae || '',
         socios: raw.socios || [],
-        // CRITÉRIO DE ACEITE: Coluna "em_prospeccao" e tag "Apto"
         status: 'em_prospeccao',
         parceiroSantander: {
           status: 'apto',
@@ -1223,6 +1070,7 @@ export default function App() {
         onOpenBulkImport={() => setIsBulkImportOpen(true)}
         onOpenSingleLead={() => setIsSingleLeadOpen(true)}
         onOpenMining={() => setIsMiningOpen(true)}
+        onOpenCartuchos={() => setIsCartuchosOpen(true)} // NOVA PROP
         onOpenTemplates={() => setIsTemplatesOpen(true)}
         onExportCsv={() => exportarLeadsCsv(leads)}
         onOpenInstallModal={() => setIsInstallOpen(true)}
@@ -1244,16 +1092,12 @@ export default function App() {
         onOpenNotifications={() => setIsNotificationModalOpen(true)}
         notificationStatus={notificationPermission}
         followupsHojeCount={followupsHojeCount}
-        isEnriching={isEnriching}
-        enrichProgress={enrichProgress}
-        enrichTotal={enrichTotal}
-        onEnrichAll={handleBatchEnrich}
       />
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl lg:max-w-none w-full mx-auto p-1 space-y-3 sm:space-y-4">
         
-        {/* Banner with workflow guide (Expansível / Recolhível para economizar espaço em tablets e celulares) */}
+        {/* Banner with workflow guide */}
         <div className="bg-gradient-to-r from-red-700 via-red-800 to-slate-900 rounded-2xl p-2.5 sm:p-4 text-white shadow-xs space-y-2">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
@@ -1266,7 +1110,6 @@ export default function App() {
                 type="button"
                 onClick={() => setIsBannerExpanded(!isBannerExpanded)}
                 className="text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
-                title={isBannerExpanded ? 'Recolher guia' : 'Expandir guia detalhado'}
               >
                 <span>{isBannerExpanded ? 'Ocultar' : 'Guia'}</span>
                 {isBannerExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
@@ -1274,7 +1117,7 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              {/* Salvar no Google Sheets */}
+              {/* Botão de Salvar no Google Sheets */}
               <button
                 onClick={() => setIsGoogleModalOpen(true)}
                 className={`relative w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl shadow-xs transition-colors cursor-pointer shrink-0 ${
@@ -1287,7 +1130,6 @@ export default function App() {
                     ? 'Planilha Google Conectada e Sincronizada'
                     : 'Salvar no Google Sheets'
                 }
-                aria-label="Salvar no Sheets"
               >
                 <FileSpreadsheet className="w-4 h-4" />
                 {currentUser && spreadsheet && (
@@ -1295,39 +1137,35 @@ export default function App() {
                 )}
               </button>
 
-              {/* Instalar APK / App */}
+              {/* Botão Instalar */}
               <button
                 onClick={() => setIsInstallOpen(true)}
                 className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-red-600 hover:bg-red-500 text-white rounded-xl shadow-xs transition-colors cursor-pointer shrink-0"
                 title="Instalar APK / App no Celular ou Tablet"
-                aria-label="Instalar APK / App"
               >
                 <Smartphone className="w-4 h-4" />
               </button>
 
-              {/* Backup */}
+              {/* Botão Backup */}
               <button
                 onClick={() => setIsExportOpen(true)}
                 className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded-xl backdrop-blur-xs transition-colors cursor-pointer shrink-0"
                 title="Backup e Restauração de Dados"
-                aria-label="Backup"
               >
                 <Database className="w-4 h-4" />
               </button>
 
-              {/* Colar Nova Lista */}
+              {/* Botão Colar Nova Lista */}
               <button
                 onClick={() => setIsBulkImportOpen(true)}
                 className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-white text-red-800 hover:bg-red-50 rounded-xl shadow-xs transition-colors cursor-pointer shrink-0"
                 title="Colar Nova Lista de Leads"
-                aria-label="Colar Nova Lista"
               >
                 <ClipboardPaste className="w-4 h-4" />
               </button>
             </div>
           </div>
 
-          {/* Conteúdo Expansível do Guia */}
           {isBannerExpanded && (
             <div className="pt-2.5 border-t border-white/15 text-xs text-red-100 leading-relaxed animate-in fade-in duration-200">
               <p>
@@ -1377,7 +1215,7 @@ export default function App() {
         </p>
       </footer>
 
-      {/* Modal 1: Disparador de WhatsApp Inteligente (com leque de mensagens para qualquer etapa) */}
+      {/* Modais existentes */}
       {leadParaMensagem && (
         <MessageComposerModal
           lead={leadParaMensagem}
@@ -1389,7 +1227,6 @@ export default function App() {
         />
       )}
 
-      {/* Modal 2: Assistente de Ligação Telefônica (Contato 3) */}
       {leadParaLigacao && (
         <CallScriptModal
           lead={leadParaLigacao}
@@ -1401,7 +1238,6 @@ export default function App() {
         />
       )}
 
-      {/* Modal 3: Dossiê Completo do Lead (Receita Federal / QSA / Sócios) */}
       {leadParaDetalhes && (
         <LeadDetailDrawer
           lead={leadParaDetalhes}
@@ -1425,7 +1261,6 @@ export default function App() {
         />
       )}
 
-      {/* Modal 4: Importador em Massa (Cole texto do WhatsApp ou envie CSV) */}
       {isBulkImportOpen && (
         <BulkImportModal
           isOpen={true}
@@ -1435,7 +1270,6 @@ export default function App() {
         />
       )}
 
-      {/* Modal 5: Cadastro de Lead Único com Busca de CNPJ */}
       {isSingleLeadOpen && (
         <SingleLeadModal
           isOpen={true}
@@ -1445,7 +1279,6 @@ export default function App() {
         />
       )}
 
-      {/* Modal 6: Gerenciador de Templates & Scripts */}
       {isTemplatesOpen && (
         <TemplateManagerModal
           templates={templates}
@@ -1455,7 +1288,6 @@ export default function App() {
         />
       )}
 
-      {/* Modal 7: Exportação e Backup JSON */}
       {isExportOpen && (
         <ExportImportModal
           isOpen={true}
@@ -1466,7 +1298,6 @@ export default function App() {
         />
       )}
 
-      {/* Modal 8: Instalação do Aplicativo (APK WebAPK no Celular ou Tablet) */}
       {isInstallOpen && (
         <InstallAppModal
           isOpen={true}
@@ -1474,7 +1305,6 @@ export default function App() {
         />
       )}
 
-      {/* Modal 9: Sincronização e Conexão com Google Planilhas */}
       {isGoogleModalOpen && (
         <GoogleSheetsSyncModal
           isOpen={true}
@@ -1491,7 +1321,6 @@ export default function App() {
         />
       )}
 
-      {/* Modal 10: Lote de Mensagens Prontas (Sprint 2) */}
       <BatchMessageModal
         isOpen={isBatchModalOpen}
         onClose={() => setIsBatchModalOpen(false)}
@@ -1500,7 +1329,6 @@ export default function App() {
         onUpdateStatus={handleUpdateLeadStatus}
       />
 
-      {/* Modal 11: AI Coach Local (Sprint 4) */}
       {leadParaCoach && (
         <CoachModal
           isOpen={true}
@@ -1510,7 +1338,6 @@ export default function App() {
         />
       )}
 
-      {/* Modal 12: Painel Supervisor com Métricas Reais (Sprint 5) */}
       <SupervisorDashboard
         isOpen={isSupervisorOpen}
         onClose={() => setIsSupervisorOpen(false)}
@@ -1519,7 +1346,6 @@ export default function App() {
         onAlternarRole={(role) => setUsuarioAtivo((prev) => ({ ...prev, role }))}
       />
 
-      {/* Modal 13: Lembretes & Notificações Web Push (9h da manhã) */}
       <NotificationModal
         isOpen={isNotificationModalOpen}
         onClose={() => setIsNotificationModalOpen(false)}
@@ -1529,7 +1355,6 @@ export default function App() {
         onSelectLead={(lead) => setLeadParaDetalhes(lead)}
       />
 
-      {/* Modal 14: Minhas Metas & Simulador de Projeção (Sprint R7) */}
       {isMetasOpen && (
         <MetasDashboard
           isOpen={true}
@@ -1538,7 +1363,6 @@ export default function App() {
         />
       )}
 
-      {/* Widget Flutuante de Mineração em Segundo Plano (Sprint 11.4) */}
       {!isMiningOpen &&
         (miningStatus.status === 'rodando' ||
           miningStatus.status === 'aguardando' ||
@@ -1549,7 +1373,6 @@ export default function App() {
           />
         )}
 
-      {/* Modal 15: Central de Mineração Integrada (Sprint 10 & 11) */}
       {isMiningOpen && (
         <MiningDashboard
           isOpen={isMiningOpen}
@@ -1560,6 +1383,13 @@ export default function App() {
           existingCnpjs={existingCnpjs}
         />
       )}
+
+      {/* NOVO MODAL DE CARTUCHOS AK */}
+      <CartuchosModal 
+        isOpen={isCartuchosOpen} 
+        onClose={() => setIsCartuchosOpen(false)} 
+      />
+
     </div>
   );
 }
