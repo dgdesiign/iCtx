@@ -31,7 +31,7 @@ import { GoogleSheetsSyncModal } from './components/GoogleSheetsSyncModal';
 import { NotificationModal } from './components/NotificationModal';
 import { MiningDashboard } from './components/MiningDashboard';
 import { MiningFloatingWidget } from './components/MiningFloatingWidget';
-import { CartuchosModal } from './components/CartuchosModal'; // NOVO IMPORT
+import { CartuchosModal } from './components/CartuchosModal';
 import { useMiningStatus } from './hooks/useMiningStatus';
 import {
   getNotificationPermissionStatus,
@@ -39,9 +39,7 @@ import {
   NotificationStatus,
 } from './services/notificationService';
 import {
-  Building2,
   Sparkles,
-  AlertCircle,
   CheckCircle2,
   Smartphone,
   FileSpreadsheet,
@@ -76,7 +74,6 @@ import {
   SpreadsheetInfo,
 } from './services/googleSheetsService';
 
-// Helpers de persistência da Base de Sincronização 3-Way (ictx_sync_base)
 const carregarBaseSync = (): Record<string, string> => {
   try {
     const raw = localStorage.getItem('ictx_sync_base');
@@ -141,7 +138,6 @@ export default function App() {
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<string>('todos');
 
-  // Modais
   const [isSupervisorOpen, setIsSupervisorOpen] = useState(false);
   const [isMetasOpen, setIsMetasOpen] = useState(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
@@ -152,7 +148,7 @@ export default function App() {
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isSingleLeadOpen, setIsSingleLeadOpen] = useState(false);
   const [isMiningOpen, setIsMiningOpen] = useState(false);
-  const [isCartuchosOpen, setIsCartuchosOpen] = useState(false); // NOVO ESTADO
+  const [isCartuchosOpen, setIsCartuchosOpen] = useState(false);
   const miningStatus = useMiningStatus();
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
@@ -160,7 +156,6 @@ export default function App() {
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
   const [isBannerExpanded, setIsBannerExpanded] = useState(false);
 
-  // Perfil do Usuário Ativo
   const [usuarioAtivo, setUsuarioAtivo] = useState<{
     nome: string;
     email: string;
@@ -171,18 +166,15 @@ export default function App() {
     role: 'supervisor',
   });
 
-  // Quantidade de follow-ups vencidos ou para hoje
   const followupsHojeCount = useMemo(() => {
     return leads.filter((l) => ehFollowUpVencido(l)).length;
   }, [leads]);
 
-  // Agendador de Lembrete Diário Web Push às 9h da manhã
   useEffect(() => {
     const cleanup = setupDaily9AmReminder(() => leads);
     return () => cleanup();
   }, [leads]);
 
-  // Leads filtrados respeitando busca, status e cadência
   const leadsFiltrados = useMemo(() => {
     return leads.filter((lead) => {
       const textoBusca = busca.toLowerCase().trim();
@@ -236,7 +228,6 @@ export default function App() {
     ];
   }, [leads, usuarioAtivo]);
 
-  // Estados do Google Sheets & Workspace
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [spreadsheet, setSpreadsheet] = useState<SpreadsheetInfo | null>(() => {
     try {
@@ -251,14 +242,12 @@ export default function App() {
     return localStorage.getItem('ictx_last_sync_time');
   });
 
-  // Salva metadados da planilha no storage
   useEffect(() => {
     if (spreadsheet) {
       localStorage.setItem('ictx_google_spreadsheet', JSON.stringify(spreadsheet));
     }
   }, [spreadsheet]);
 
-  // Contagem de leads alterados apenas localmente (hash local diferente de base[id]) sem sessão Google ativa
   const dirtyCount = useMemo(() => {
     if (currentUser) return 0;
     const base = carregarBaseSync();
@@ -268,7 +257,6 @@ export default function App() {
     }).length;
   }, [leads, currentUser]);
 
-  // Contagem de pendências de sync e helper de retry
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
 
   function calcularPendenciasLocais(): number {
@@ -302,21 +290,18 @@ export default function App() {
     }
   }
 
-  // Recalcula pendingSyncCount quando leads ou spreadsheet mudam (se não estiver salvando)
   useEffect(() => {
     if (!isSavingToSheetRef.current && currentUser && spreadsheet?.id) {
       setPendingSyncCount(calcularPendenciasLocais());
     }
   }, [leads, spreadsheet?.id, currentUser]);
 
-  // Travas de proteção para evitar loops e sobrescritas destrutivas
   const isInitialMountRef = useRef(true);
   const isLoadingFromSheetRef = useRef(false);
   const isSavingToSheetRef = useRef(false);
   const firstMergeDoneRef = useRef(false);
   const pendingSaveLeadsRef = useRef<Lead[] | null>(null);
 
-  // Executa autoteste de merge em ambiente de desenvolvimento (DEV)
   useEffect(() => {
     if (import.meta.env.DEV) {
       import('./utils/syncMerge').then(({ selfTestMerge }) => {
@@ -330,7 +315,6 @@ export default function App() {
     }
   }, []);
 
-  // Listener de autenticação Firebase / Google e execução do 1º merge da sessão
   useEffect(() => {
     const unsubscribe = initAuth(
       async (user, token) => {
@@ -376,19 +360,16 @@ export default function App() {
     return () => unsubscribe();
   }, [spreadsheet?.id]);
 
-  // Seleções ativas
   const [leadParaMensagem, setLeadParaMensagem] = useState<Lead | null>(null);
   const [leadParaLigacao, setLeadParaLigacao] = useState<Lead | null>(null);
   const [leadParaDetalhes, setLeadParaDetalhes] = useState<Lead | null>(null);
   const [leadParaCoach, setLeadParaCoach] = useState<Lead | null>(null);
   const [selectedClient, setSelectedClient] = useState<any | null>(null);
 
-  // Sincroniza leads no storage local instantâneo
   useEffect(() => {
     salvarLeads(leads);
   }, [leads]);
 
-  // Auto-salvamento debounced no Google Sheets
   useEffect(() => {
     if (isInitialMountRef.current) {
       isInitialMountRef.current = false;
@@ -432,7 +413,6 @@ export default function App() {
     return () => clearTimeout(timeout);
   }, [leads, currentUser, spreadsheet?.id]);
 
-  // Descarrega imediatamente saves pendentes
   useEffect(() => {
     const flushPendingSave = async () => {
       if (!firstMergeDoneRef.current || !pendingSaveLeadsRef.current || !spreadsheet?.id) return;
@@ -468,12 +448,10 @@ export default function App() {
     };
   }, [spreadsheet?.id]);
 
-  // Sincroniza templates no storage
   useEffect(() => {
     salvarTemplates(templates);
   }, [templates]);
 
-  // Migração idempotente por lead
   useEffect(() => {
     setLeads((prev) => {
       let alterado = false;
@@ -517,7 +495,6 @@ export default function App() {
     });
   }, []);
 
-  // useEffect B — Saneamento de telefone/nome/empresa
   useEffect(() => {
     const leadsSaneados = leads.map((l) => autocorrigeLead(l));
     if (JSON.stringify(leadsSaneados) !== JSON.stringify(leads)) {
@@ -525,7 +502,6 @@ export default function App() {
     }
   }, []);
 
-  // useEffect C — Migration de reparo
   useEffect(() => {
     const MIGRATION_FLAG = 'ictx_migration_ativa_repair_done';
     if (localStorage.getItem(MIGRATION_FLAG) === 'true') return;
@@ -556,7 +532,6 @@ export default function App() {
     localStorage.setItem(MIGRATION_FLAG, 'true');
   }, []);
 
-  // Backfill dataFechamento
   useEffect(() => {
     let alterado = false;
     const leadsBackfillados = leads.map(l => {
@@ -572,7 +547,6 @@ export default function App() {
     if (alterado) setLeads(leadsBackfillados);
   }, []);
 
-  // Handlers de status e histórico
   const handleUpdateLeadStatus = (
     leadId: string,
     novoStatus: LeadStatus,
@@ -730,7 +704,6 @@ export default function App() {
     }
   };
 
-  // Listener para eventos customizados disparados por cards ou componentes filhos
   useEffect(() => {
     const handleCustomAcaoContato = (e: Event) => {
       const customEvent = e as CustomEvent<{
@@ -1064,13 +1037,12 @@ export default function App() {
   return (
     <div className="min-h-[100dvh] bg-slate-100 flex flex-col text-slate-800">
       
-      {/* Top Header Navigation */}
       <Header
         leads={leads}
         onOpenBulkImport={() => setIsBulkImportOpen(true)}
         onOpenSingleLead={() => setIsSingleLeadOpen(true)}
         onOpenMining={() => setIsMiningOpen(true)}
-        onOpenCartuchos={() => setIsCartuchosOpen(true)} // NOVA PROP
+        onOpenCartuchos={() => setIsCartuchosOpen(true)}
         onOpenTemplates={() => setIsTemplatesOpen(true)}
         onExportCsv={() => exportarLeadsCsv(leads)}
         onOpenInstallModal={() => setIsInstallOpen(true)}
@@ -1094,10 +1066,8 @@ export default function App() {
         followupsHojeCount={followupsHojeCount}
       />
 
-      {/* Main Container */}
       <main className="flex-1 max-w-7xl lg:max-w-none w-full mx-auto p-1 space-y-3 sm:space-y-4">
         
-        {/* Banner with workflow guide */}
         <div className="bg-gradient-to-r from-red-700 via-red-800 to-slate-900 rounded-2xl p-2.5 sm:p-4 text-white shadow-xs space-y-2">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
@@ -1117,7 +1087,6 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              {/* Botão de Salvar no Google Sheets */}
               <button
                 onClick={() => setIsGoogleModalOpen(true)}
                 className={`relative w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl shadow-xs transition-colors cursor-pointer shrink-0 ${
@@ -1125,11 +1094,7 @@ export default function App() {
                     ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
                     : 'bg-emerald-950/70 hover:bg-emerald-900 text-emerald-200 border border-emerald-600/70'
                 }`}
-                title={
-                  currentUser && spreadsheet
-                    ? 'Planilha Google Conectada e Sincronizada'
-                    : 'Salvar no Google Sheets'
-                }
+                title={currentUser && spreadsheet ? 'Planilha Google Conectada e Sincronizada' : 'Salvar no Google Sheets'}
               >
                 <FileSpreadsheet className="w-4 h-4" />
                 {currentUser && spreadsheet && (
@@ -1137,29 +1102,26 @@ export default function App() {
                 )}
               </button>
 
-              {/* Botão Instalar */}
               <button
                 onClick={() => setIsInstallOpen(true)}
                 className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-red-600 hover:bg-red-500 text-white rounded-xl shadow-xs transition-colors cursor-pointer shrink-0"
-                title="Instalar APK / App no Celular ou Tablet"
+                title="Instalar APK / App"
               >
                 <Smartphone className="w-4 h-4" />
               </button>
 
-              {/* Botão Backup */}
               <button
                 onClick={() => setIsExportOpen(true)}
                 className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded-xl backdrop-blur-xs transition-colors cursor-pointer shrink-0"
-                title="Backup e Restauração de Dados"
+                title="Backup e Restauração"
               >
                 <Database className="w-4 h-4" />
               </button>
 
-              {/* Botão Colar Nova Lista */}
               <button
                 onClick={() => setIsBulkImportOpen(true)}
                 className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-white text-red-800 hover:bg-red-50 rounded-xl shadow-xs transition-colors cursor-pointer shrink-0"
-                title="Colar Nova Lista de Leads"
+                title="Colar Nova Lista"
               >
                 <ClipboardPaste className="w-4 h-4" />
               </button>
@@ -1188,7 +1150,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Pipeline / Kanban Board View */}
         <PipelineKanban
           leads={leads}
           onOpenMessageComposer={(lead) => setLeadParaMensagem(autocorrigeLead(lead))}
@@ -1208,14 +1169,12 @@ export default function App() {
 
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-slate-200 bg-white py-4 px-6 text-center text-xs text-slate-500">
         <p>
           iCtx · CRM de Prospecção PJ · Desenvolvido para operações de vendas externas e ativas de Douglas Krüger · Dados públicos da Receita Federal
         </p>
       </footer>
 
-      {/* Modais existentes */}
       {leadParaMensagem && (
         <MessageComposerModal
           lead={leadParaMensagem}
@@ -1384,7 +1343,6 @@ export default function App() {
         />
       )}
 
-      {/* NOVO MODAL DE CARTUCHOS AK */}
       <CartuchosModal 
         isOpen={isCartuchosOpen} 
         onClose={() => setIsCartuchosOpen(false)} 
