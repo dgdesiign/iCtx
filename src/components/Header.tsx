@@ -11,7 +11,7 @@ import {
   Bell,
   Download,
   Smartphone,
-  Package, // NOVO ÍCONE PARA CARTUCHOS AK
+  Package,
   RotateCw,
   CheckCircle2,
   Users,
@@ -21,8 +21,7 @@ interface HeaderProps {
   leads: Lead[];
   onOpenBulkImport: () => void;
   onOpenSingleLead: () => void;
-  onOpenMining: () => void; // Mantido para compatibilidade, mas oculto
-  onOpenCartuchos: () => void; // NOVO
+  onOpenCartuchos: () => void;
   onOpenTemplates: () => void;
   onExportCsv: () => void;
   onOpenInstallModal: () => void;
@@ -69,7 +68,6 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-30 flex flex-col">
       <div className="flex items-center justify-between px-4 py-2">
         
-        {/* ESQUERDA: Logo e Identificação */}
         <div className="flex items-center gap-3">
           <div className="bg-red-600 text-white font-bold px-2 py-1 rounded-md text-xl tracking-tighter shadow-xs">
             iCtx
@@ -91,7 +89,6 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* CENTRO: Contadores */}
         <div className="hidden lg:flex items-center gap-4 text-xs font-medium text-slate-600 border border-slate-200 rounded-xl px-4 py-1.5 bg-slate-50/50 shadow-2xs">
           <div className="flex items-center gap-1.5">
             <Users className="w-3.5 h-3.5 text-slate-400" />
@@ -109,10 +106,8 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* DIREITA: Botões de Ação Rápida */}
         <div className="flex items-center gap-1.5 sm:gap-2">
           
-          {/* NOVO: Botão Cartuchos AK */}
           <button
             onClick={onOpenCartuchos}
             className="p-2 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors cursor-pointer shadow-2xs"
