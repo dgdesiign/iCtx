@@ -32,6 +32,9 @@ import { NotificationModal } from './components/NotificationModal';
 import { MiningDashboard } from './components/MiningDashboard';
 import { MiningFloatingWidget } from './components/MiningFloatingWidget';
 import { CartuchosModal } from './components/CartuchosModal';
+import { LoginScreen } from './components/LoginScreen'; // NOVO
+import { MobileNav } from './components/MobileNav'; // NOVO
+import { ProfileModal } from './components/ProfileModal'; // NOVO
 import { useMiningStatus } from './hooks/useMiningStatus';
 import {
   getNotificationPermissionStatus,
@@ -99,6 +102,9 @@ const salvarBaseSync = (listaLeads: Lead[]) => {
 };
 
 export default function App() {
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [mobileTab, setMobileTab] = useState<'leads' | 'cartuchos' | 'metas' | 'perfil'>('leads');
+
   const [leads, setLeads] = useState<Lead[]>(() => {
     const salvos = carregarLeads();
     if (salvos.length > 0) {
@@ -148,6 +154,7 @@ export default function App() {
   const [isSingleLeadOpen, setIsSingleLeadOpen] = useState(false);
   const [isMiningOpen, setIsMiningOpen] = useState(false);
   const [isCartuchosOpen, setIsCartuchosOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false); // NOVO
   const miningStatus = useMiningStatus();
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
@@ -323,6 +330,7 @@ export default function App() {
       async (user, token) => {
         setCurrentUser(user);
         setCachedAccessToken(token);
+        setIsAuthChecking(false);
 
         if (!firstMergeDoneRef.current && spreadsheet?.id) {
           try {
@@ -358,6 +366,7 @@ export default function App() {
       () => {
         setCurrentUser(null);
         firstMergeDoneRef.current = false;
+        setIsAuthChecking(false);
       }
     );
     return () => unsubscribe();
@@ -550,7 +559,7 @@ export default function App() {
     if (alterado) setLeads(leadsBackfillados);
   }, []);
 
-  // --- FUNÇÃO DE ENRIQUECIMENTO BLINDADA (SALVA DIRETO NO BANCO LOCAL) ---
+  // --- FUNÇÃO DE ENRIQUECIMENTO INTELIGENTE (RESILIENTE E COM PAUSA) ---
   const handleBatchEnrich = async () => {
     let filaIds: string[] = [];
     const filaSalva = localStorage.getItem('ictx_enrich_fila');
@@ -594,7 +603,6 @@ export default function App() {
     while (filaIds.length > 0) {
       const leadId = filaIds[0];
       
-      // Pega os dados FRESCOS do localStorage
       const leadsAtuais = carregarLeads();
       const index = leadsAtuais.findIndex(l => l.id === leadId);
 
@@ -642,7 +650,6 @@ export default function App() {
               telefoneSecundarioFormatado: novoTelSecundario ? formatarTelefone(novoTelSecundario) : undefined,
             };
 
-            // A MÁGICA ACONTECE AQUI: Salva no localStorage e atualiza o React
             leadsAtuais[index] = autocorrigeLead(leadAtualizado);
             salvarLeads(leadsAtuais); 
             setLeads([...leadsAtuais]); 
@@ -656,10 +663,8 @@ export default function App() {
         }
       }
 
-      // Remove o lead processado do topo da fila e salva
       filaIds.shift();
       localStorage.setItem('ictx_enrich_fila', JSON.stringify(filaIds));
-      
       setEnrichProgress(totalOriginal - filaIds.length);
 
       if (filaIds.length > 0) {
@@ -672,7 +677,6 @@ export default function App() {
     alert('Enriquecimento em lote concluído com sucesso!');
   };
 
-  // Retoma o enriquecimento se a página for atualizada
   useEffect(() => {
     const filaSalva = localStorage.getItem('ictx_enrich_fila');
     if (filaSalva && !isEnriching) {
@@ -906,93 +910,11 @@ export default function App() {
     }
   };
 
-  const handleSyncToSheet = async () => {
-    setIsGoogleSyncing(true);
-    try {
-      let token = await getAccessToken();
-      if (!token) {
-        const authResult = await googleSignIn();
-        if (!authResult) return;
-        token = authResult.accessToken;
-        setCurrentUser(authResult.user);
-      }
-
-      let targetSheetId = spreadsheet?.id;
-      if (!spreadsheet) {
-        const sheetInfo = await findOrCreateSpreadsheet(token);
-        setSpreadsheet(sheetInfo);
-        targetSheetId = sheetInfo.id;
-      }
-
-      if (targetSheetId) {
-        await executarComRetry(async () => {
-          const currentToken = (await getAccessToken()) || token;
-          if (!currentToken) throw new Error('TOKEN_EXPIRADO');
-          await saveAllLeadsToSheet(targetSheetId, leads, currentToken);
-        });
-        salvarBaseSync(leads);
-        firstMergeDoneRef.current = true;
-      }
-
-      const agora = new Date().toISOString();
-      setLastSyncTime(agora);
-      localStorage.setItem('ictx_last_sync_time', agora);
-    } finally {
-      setIsGoogleSyncing(false);
-    }
-  };
-
-  const handleFetchFromSheet = async () => {
-    setIsGoogleSyncing(true);
-    isLoadingFromSheetRef.current = true;
-    try {
-      let token = await getAccessToken();
-      if (!token) {
-        const authResult = await googleSignIn();
-        if (!authResult) return;
-        token = authResult.accessToken;
-        setCurrentUser(authResult.user);
-      }
-
-      const sheetId = spreadsheet?.id;
-      if (!sheetId) throw new Error('Nenhuma planilha conectada.');
-
-      await executarComRetry(async () => {
-        const currentToken = (await getAccessToken()) || token;
-        if (!currentToken) throw new Error('TOKEN_EXPIRADO');
-        const leadsDaPlanilha = await fetchLeadsFromSheet(sheetId, currentToken);
-        const base = carregarBaseSync();
-        let listaMerged: Lead[] = [];
-        setLeads((locaisAtuais) => {
-          const { merged, conflitos } = mergeLeads3(locaisAtuais, leadsDaPlanilha, base);
-          if (conflitos > 0) {
-            console.info(`[Sync Merge] ${conflitos} conflito(s) resolvido(s) favorecendo versão local.`);
-          }
-          listaMerged = merged;
-          return merged;
-        });
-
-        if (listaMerged.length > 0) {
-          await saveAllLeadsToSheet(sheetId, listaMerged, currentToken);
-          salvarBaseSync(listaMerged);
-        }
-      });
-
-      firstMergeDoneRef.current = true;
-
-      const agora = new Date().toISOString();
-      setLastSyncTime(agora);
-      localStorage.setItem('ictx_last_sync_time', agora);
-    } finally {
-      isLoadingFromSheetRef.current = false;
-      setIsGoogleSyncing(false);
-    }
-  };
-
   const handleDisconnectGoogle = async () => {
     await logoutGoogle();
     setCurrentUser(null);
     firstMergeDoneRef.current = false;
+    setIsProfileOpen(false);
   };
 
   const handleUpdateLead = (leadAtualizado: Lead) => {
@@ -1072,147 +994,44 @@ export default function App() {
     setLeads((prev) => [autocorrigeLead(novoLead), ...prev]);
   };
 
-  const handleImportarLeadsMinerados = (leadsRecebidos: any[]) => {
-    if (!leadsRecebidos || leadsRecebidos.length === 0) return;
-
-    const cnpjsExistentes = new Set(leads.map((l) => l.cnpj));
-    const novosFormatados: Lead[] = [];
-    let duplicadosCount = 0;
-
-    for (const raw of leadsRecebidos) {
-      const cnpjLimpo = limparCnpj(raw.cnpj || raw.CNPJ || '');
-      if (!cnpjLimpo || cnpjLimpo.length !== 14) continue;
-
-      if (cnpjsExistentes.has(cnpjLimpo)) {
-        duplicadosCount++;
-        continue;
-      }
-
-      cnpjsExistentes.add(cnpjLimpo);
-
-      const telPrincipal = limparDigitos(raw.telefone || raw.telefonePrincipal || raw.celular || '');
-      const telSecundario = limparDigitos(raw.telefoneSecundario || '');
-      const agora = new Date().toISOString();
-
-      const razao = (raw.razaoSocial || raw.razao_social || raw.nome || raw.empresa || '').trim();
-      const fantasia = (raw.nomeFantasia || raw.nome_fantasia || '').trim();
-      const nomeContato = (raw.nomeContato || raw.contato || raw.nome || '').trim() || 'Contato';
-
-      const novoLead: Lead = {
-        id: `lead_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        cnpj: cnpjLimpo,
-        cnpjFormatado: formatarCnpj(cnpjLimpo),
-        nomeContato: formatarNome(nomeContato),
-        telefonePrincipal: telPrincipal,
-        telefonePrincipalFormatado: formatarTelefone(telPrincipal),
-        telefoneSecundario: telSecundario || undefined,
-        telefoneSecundarioFormatado: telSecundario ? formatarTelefone(telSecundario) : undefined,
-        razaoSocial: formatarNome(razao || 'Empresa'),
-        nomeFantasia: formatarNome(fantasia),
-        empresaExibicao: formatarNome(fantasia || razao || 'Empresa'),
-        empresaParaMensagem: formatarNome(fantasia || 'sua empresa'),
-        municipio: raw.municipio || raw.cidade || '',
-        bairro: raw.bairro || '',
-        cnaeCodigo: raw.cnaeCodigo ? String(raw.cnaeCodigo) : undefined,
-        cnaeDescricao: raw.cnaeDescricao || raw.cnae || '',
-        socios: raw.socios || [],
-        status: 'em_prospeccao',
-        parceiroSantander: {
-          status: 'apto',
-          verificadoEm: agora,
-        },
-        produtoSugerido: '💳 Conta PJ Isenta & Cartão',
-        criadoEm: agora,
-        atualizadoEm: agora,
-        historicoContatos: [],
-        cadenciaContatos: 0,
-        produtosAtivos: {
-          conta: false,
-          maquina: false,
-        },
-      };
-
-      novosFormatados.push(autocorrigeLead(novoLead));
-    }
-
-    if (novosFormatados.length === 0) {
-      alert(`Todos os ${leadsRecebidos.length} leads já constam na base do CRM (duplicatas evitadas).`);
-      return;
-    }
-
-    setLeads((prev) => [...novosFormatados, ...prev]);
-    setIsMiningOpen(false);
-
-    const msg = duplicadosCount > 0
-      ? `Sucesso: ${novosFormatados.length} lead(s) adicionados diretamente em "Em Prospecção" com tag Apto! (${duplicadosCount} duplicado(s) ignorado(s))`
-      : `Sucesso: ${novosFormatados.length} lead(s) adicionados diretamente em "Em Prospecção" com tag Apto!`;
-
-    alert(msg);
-  };
-
-  const handleSaveTemplates = (novosTemplates: MessageTemplate[]) => {
-    setTemplates(novosTemplates);
-  };
-
-  const handleRestoreBackup = (backupLeads: Lead[], backupTemplates: MessageTemplate[]) => {
-    const leadsSaneados = backupLeads
-      .filter((l) => l && l.id && !isSampleLeadId(l.id))
-      .map((l) => autocorrigeLead(l));
-    
-    if (leadsSaneados.length > 0) {
-      salvarLeads(leadsSaneados);
-    }
-    if (backupTemplates && backupTemplates.length > 0) {
-      salvarTemplates(backupTemplates);
-    }
-    setLeads(leadsSaneados);
-    setTemplates(backupTemplates);
-  };
-
   const existingCnpjs = new Set(leads.map((l) => l.cnpj));
 
+  // --- AQUI COMEÇA A RENDERIZAÇÃO ---
+  
+  if (isAuthChecking) {
+    return (
+      <div className="min-h-[100dvh] bg-slate-900 flex items-center justify-center text-white">
+        <Loader2 className="w-8 h-8 animate-spin text-red-500" />
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <LoginScreen onLogin={handleConnectGoogle} isLoading={isGoogleSyncing} />;
+  }
+
   return (
-    <div className="min-h-[100dvh] bg-slate-100 flex flex-col text-slate-800">
+    <div className="min-h-[100dvh] bg-slate-100 flex flex-col text-slate-800 pb-16 md:pb-0">
       
       <Header
         leads={leads}
         onOpenBulkImport={() => setIsBulkImportOpen(true)}
-        onOpenSingleLead={() => setIsSingleLeadOpen(true)}
-        onOpenCartuchos={() => setIsCartuchosOpen(true)}
-        onOpenTemplates={() => setIsTemplatesOpen(true)}
         onExportCsv={() => exportarLeadsCsv(leads)}
         onOpenInstallModal={() => setIsInstallOpen(true)}
         onOpenGoogleSheets={() => setIsGoogleModalOpen(true)}
         isGoogleConnected={Boolean(currentUser && spreadsheet)}
-        isSupervisor={usuarioAtivo.role === 'supervisor'}
-        onOpenSupervisorDashboard={() => setIsSupervisorOpen(true)}
-        onOpenMetas={() => setIsMetasOpen(true)}
-        onOpenNotifications={() => setIsNotificationModalOpen(true)}
-        followupsHojeCount={followupsHojeCount}
-        isEnriching={isEnriching}
-        enrichProgress={enrichProgress}
-        enrichTotal={enrichTotal}
-        onEnrichAll={handleBatchEnrich}
       />
 
       <main className="flex-1 max-w-7xl lg:max-w-none w-full mx-auto p-1 space-y-3 sm:space-y-4">
         
-        <div className="bg-gradient-to-r from-red-700 via-red-800 to-slate-900 rounded-2xl p-2.5 sm:p-4 text-white shadow-xs space-y-2">
+        {/* Banner (Agora só no Desktop) */}
+        <div className="hidden md:block bg-gradient-to-r from-red-700 via-red-800 to-slate-900 rounded-2xl p-2.5 sm:p-4 text-white shadow-xs space-y-2">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
               <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300 shrink-0" />
               <h2 className="text-xs sm:text-sm font-bold tracking-tight truncate">
-                <span className="sm:hidden">iCtx · Fluxo</span>
-                <span className="hidden sm:inline">iCtx · Fluxo Comercial de Alta Conversão</span>
+                iCtx · Fluxo Comercial de Alta Conversão
               </h2>
-              <button
-                type="button"
-                onClick={() => setIsBannerExpanded(!isBannerExpanded)}
-                className="text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
-              >
-                <span>{isBannerExpanded ? 'Ocultar' : 'Guia'}</span>
-                {isBannerExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-              </button>
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
@@ -1223,7 +1042,7 @@ export default function App() {
                     ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
                     : 'bg-emerald-950/70 hover:bg-emerald-900 text-emerald-200 border border-emerald-600/70'
                 }`}
-                title={currentUser && spreadsheet ? 'Planilha Google Conectada e Sincronizada' : 'Salvar no Google Sheets'}
+                title={currentUser && spreadsheet ? 'Planilha Google Conectada' : 'Salvar no Google Sheets'}
               >
                 <FileSpreadsheet className="w-4 h-4" />
                 {currentUser && spreadsheet && (
@@ -1256,28 +1075,7 @@ export default function App() {
               </button>
             </div>
           </div>
-
-          {isBannerExpanded && (
-            <div className="pt-2.5 border-t border-white/15 text-xs text-red-100 leading-relaxed animate-in fade-in duration-200">
-              <p>
-                1. <strong>Lead Novo</strong> ➔ 2. <strong>Contato 1</strong> (Pronampe / Condições Especiais) ➔ 3. <strong>Contato 2</strong> (Follow-up de rotina) ➔ 4. <strong>Contato 3</strong> (Ligação telefônica) ➔ 5. <strong>Em Negociação</strong> ou <strong>Descartado</strong>.
-              </p>
-              <p className="text-[11px] text-red-200/80 mt-1">
-                💡 Dica: Arraste os cards diretamente entre as colunas do Kanban ou utilize o seletor no card para movimentar seus clientes.
-              </p>
-            </div>
-          )}
         </div>
-
-        {leads.length === 0 && !currentUser && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900 flex items-start gap-3">
-            <FileSpreadsheet className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <strong className="block font-bold">Sua base está vazia.</strong>
-              Conecte sua planilha Google (ícone verde no topo) para sincronizar os leads ou importe uma lista em massa (ícone roxo de upload).
-            </div>
-          </div>
-        )}
 
         <PipelineKanban
           leads={leads}
@@ -1298,12 +1096,17 @@ export default function App() {
 
       </main>
 
-      <footer className="border-t border-slate-200 bg-white py-4 px-6 text-center text-xs text-slate-500">
-        <p>
-          iCtx · CRM de Prospecção PJ · Desenvolvido para operações de vendas externas e ativas de Douglas Krüger · Dados públicos da Receita Federal
-        </p>
-      </footer>
+      <MobileNav
+        activeTab={mobileTab}
+        onTabChange={(tab) => {
+          setMobileTab(tab);
+          if (tab === 'cartuchos') setIsCartuchosOpen(true);
+          if (tab === 'metas') setIsMetasOpen(true);
+          if (tab === 'perfil') setIsProfileOpen(true);
+        }}
+      />
 
+      {/* Modais */}
       {leadParaMensagem && (
         <MessageComposerModal
           lead={leadParaMensagem}
@@ -1446,7 +1249,10 @@ export default function App() {
       {isMetasOpen && (
         <MetasDashboard
           isOpen={true}
-          onClose={() => setIsMetasOpen(false)}
+          onClose={() => {
+            setIsMetasOpen(false);
+            setMobileTab('leads');
+          }}
           leads={leads}
         />
       )}
@@ -1474,7 +1280,22 @@ export default function App() {
 
       <CartuchosModal 
         isOpen={isCartuchosOpen} 
-        onClose={() => setIsCartuchosOpen(false)} 
+        onClose={() => {
+          setIsCartuchosOpen(false);
+          setMobileTab('leads');
+        }} 
+      />
+
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => {
+          setIsProfileOpen(false);
+          setMobileTab('leads');
+        }}
+        user={currentUser}
+        onLogout={handleDisconnectGoogle}
+        isSyncing={isGoogleSyncing}
+        lastSyncTime={lastSyncTime}
       />
 
     </div>
