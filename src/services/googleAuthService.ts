@@ -1,220 +1,121 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import {
-  getAuth,
-  signInWithPopup,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  signOut,
+import { initializeApp } from "firebase/app";
+import { 
+  getAuth, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged, 
   User,
-} from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+  UserCredential
+} from "firebase/auth";
 
-// Inicializa Firebase App singleton
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+// Configuração do Firebase usando as variáveis de ambiente da Vercel
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: "gen-lang-client-0531276266.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: "gen-lang-client-0531276266.firebasestorage.app",
+  messagingSenderId: "549227667726",
+  appId: "1:549227667726:web:2a0297db9856e446c5f75f"
+};
+
+const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-const provider = new GoogleAuthProvider();
-// Escopos do Google Workspace: Google Sheets e Google Drive File
-provider.addScope('https://www.googleapis.com/auth/spreadsheets');
-provider.addScope('https://www.googleapis.com/auth/drive.file');
-provider.setCustomParameters({
-  prompt: 'select_account',
-});
+// Escopos necessários para o iCtx acessar o Google Sheets e o Drive
+const SCOPES = [
+  "https://www.googleapis.com/auth/spreadsheets",
+  "https://www.googleapis.com/auth/drive.file",
+];
 
-let isSigningIn = false;
-let cachedAccessToken: string | null = null;
+const TOKEN_STORAGE_KEY = 'ictx_google_token';
 
-const SESSION_KEY = 'ictx_google_token';
-
-interface StoredSession {
+interface CachedToken {
   accessToken: string;
   expiresAt: number;
 }
 
 /**
- * Inicializa ouvinte de estado de autenticação.
- * Restaura o token de acesso do sessionStorage se expiresAt > agora + 60s.
+ * Salva o token de acesso no sessionStorage com validade de 55 minutos
  */
-export const initAuth = (
-  onAuthSuccess?: (user: User, token: string) => void,
-  onAuthFailure?: () => void
-) => {
-  return onAuthStateChanged(auth, async (user: User | null) => {
-    if (user) {
-      let token = cachedAccessToken;
-      if (!token) {
-        try {
-          const raw = sessionStorage.getItem(SESSION_KEY);
-          if (raw) {
-            const parsed: StoredSession = JSON.parse(raw);
-            const agora = Date.now();
-            if (parsed.accessToken && parsed.expiresAt > agora + 60 * 1000) {
-              token = parsed.accessToken;
-              cachedAccessToken = token;
-            } else {
-              sessionStorage.removeItem(SESSION_KEY);
-            }
-          }
-        } catch {
-          sessionStorage.removeItem(SESSION_KEY);
-        }
-      }
-
-      if (token) {
-        if (onAuthSuccess) onAuthSuccess(user, token);
-      } else {
-        if (!isSigningIn && onAuthFailure) {
-          onAuthFailure();
-        }
-      }
-    } else {
-      cachedAccessToken = null;
-      try {
-        sessionStorage.removeItem(SESSION_KEY);
-      } catch {}
-      if (onAuthFailure) onAuthFailure();
-    }
-  });
-};
-
-export function gravarTokenSessao(accessToken: string): void {
+export function setCachedAccessToken(accessToken: string) {
+  if (!accessToken) return;
   const expiresAt = Date.now() + 55 * 60 * 1000; // 55 minutos
-  try {
-    sessionStorage.setItem(
-      SESSION_KEY,
-      JSON.stringify({
-        accessToken,
-        expiresAt,
-      })
-    );
-  } catch (e) {
-    console.warn('Não foi possível gravar no sessionStorage:', e);
-  }
+  const data: CachedToken = { accessToken, expiresAt };
+  sessionStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(data));
 }
 
 /**
- * Dispara popup oficial do Google para login e autorização das Planilhas.
- * Grava { accessToken, expiresAt = agora + 55 min } em sessionStorage.
+ * Recupera o token do sessionStorage se ainda for válido
  */
-export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+export function getAccessToken(): string | null {
+  const raw = sessionStorage.getItem(TOKEN_STORAGE_KEY);
+  if (!raw) return null;
+  
   try {
-    isSigningIn = true;
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('Falha ao obter token de acesso do Google.');
+    const { accessToken, expiresAt }: CachedToken = JSON.parse(raw);
+    // Retorna o token apenas se ainda faltar mais de 60 segundos para expirar
+    if (Date.now() < expiresAt - 60000) {
+      return accessToken;
     }
-
-    cachedAccessToken = credential.accessToken;
-    gravarTokenSessao(credential.accessToken);
-
-    return { user: result.user, accessToken: cachedAccessToken };
-  } catch (error: any) {
-    console.error('Erro na autenticação com o Google:', error);
-    throw error;
-  } finally {
-    isSigningIn = false;
-  }
-};
-
-/**
- * Retorna o token de acesso ativo (em memória ou restaurado de sessionStorage se não expirado)
- */
-export const getAccessToken = async (): Promise<string | null> => {
-  try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    if (!raw) {
-      cachedAccessToken = null;
-      return null;
-    }
-    const parsed: StoredSession = JSON.parse(raw);
-    if (!parsed.accessToken || !parsed.expiresAt || parsed.expiresAt <= Date.now() + 60 * 1000) {
-      cachedAccessToken = null;
-      sessionStorage.removeItem(SESSION_KEY);
-      return null;
-    }
-    cachedAccessToken = parsed.accessToken;
-    return cachedAccessToken;
   } catch {
-    cachedAccessToken = null;
-    return null;
+    // Ignora erro de parse e retorna null
   }
-};
-
-/**
- * Define manualmente o token de acesso (grava também no sessionStorage com 55 min)
- */
-export const setCachedAccessToken = (token: string | null) => {
-  cachedAccessToken = token;
-  if (token) {
-    gravarTokenSessao(token);
-  } else {
-    try {
-      sessionStorage.removeItem(SESSION_KEY);
-    } catch {}
-  }
-};
-
-/**
- * Logout do Google
- */
-export const logoutGoogle = async () => {
-  await signOut(auth);
-  cachedAccessToken = null;
-  try {
-    sessionStorage.removeItem(SESSION_KEY);
-  } catch {}
-};
-
-/**
- * Tenta reautenticar via popup caso haja sessão ativa no Firebase.
- * Se bem-sucedido, grava novo token em sessionStorage e atualiza cache.
- * Se bloqueado pelo navegador ou sem sessão, retorna false.
- */
-export async function tentarReautenticar(): Promise<boolean> {
-  if (!auth.currentUser) {
-    return false;
-  }
-
-  try {
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      return false;
-    }
-
-    cachedAccessToken = credential.accessToken;
-    gravarTokenSessao(credential.accessToken);
-
-    return true;
-  } catch (error) {
-    console.warn('[googleAuth] Falha na reautenticação automática (popup bloqueado ou cancelado):', error);
-    return false;
-  }
-}
-
-/**
- * Garante um token válido de acesso. Se expirado ou próximo de expirar (< 60s),
- * tenta silent refresh via tentarReautenticar(). Retorna o token ou null.
- */
-export async function garantirTokenValido(): Promise<string | null> {
-  try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    if (raw) {
-      const parsed: StoredSession = JSON.parse(raw);
-      const agora = Date.now();
-      if (parsed.accessToken && parsed.expiresAt && parsed.expiresAt > agora + 60 * 1000) {
-        cachedAccessToken = parsed.accessToken;
-        return cachedAccessToken;
-      }
-    }
-  } catch {}
-
-  const renovado = await tentarReautenticar();
-  if (renovado && cachedAccessToken) {
-    return cachedAccessToken;
-  }
-
   return null;
 }
 
+/**
+ * Faz o login com o Google usando popup e obtém o token de acesso
+ */
+export async function googleSignIn(): Promise<{ user: User; accessToken: string } | null> {
+  const provider = new GoogleAuthProvider();
+  SCOPES.forEach(scope => provider.addScope(scope));
+
+  try {
+    const result: UserCredential = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    
+    if (!credential?.accessToken) {
+      throw new Error("Não foi possível obter o token de acesso do Google.");
+    }
+
+    setCachedAccessToken(credential.accessToken);
+    return { user: result.user, accessToken: credential.accessToken };
+  } catch (error: any) {
+    console.error("Erro no login com Google:", error);
+    // Repassa o erro para a UI tratar (ex: auth/popup-closed-by-user)
+    throw error; 
+  }
+}
+
+/**
+ * Desconecta o usuário
+ */
+export async function logoutGoogle(): Promise<void> {
+  await signOut(auth);
+  sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
+/**
+ * Inicializa o listener de autenticação.
+ * Restaura a sessão se o Firebase já tiver o usuário logado E o token for válido.
+ */
+export function initAuth(
+  onSuccess: (user: User, accessToken: string) => void,
+  onFailure: () => void
+) {
+  return onAuthStateChanged(auth, async (user: User | null) => {
+    if (user) {
+      const token = getAccessToken();
+      if (token) {
+        onSuccess(user, token);
+      } else {
+        // Usuário está logado no Firebase, mas o token do Sheets expirou ou não existe.
+        // O app precisa disparar um novo popup de login para pegar um novo token de Sheets.
+        onFailure();
+      }
+    } else {
+      onFailure();
+    }
+  });
+}
