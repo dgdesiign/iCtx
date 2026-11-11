@@ -46,10 +46,12 @@ export default async function handler(req, res) {
       worksheet.addRow({ cnpj: lead.cnpj });
     }
 
+    // A MUDANÇA ESTÁ AQUI: Geramos o Buffer em vez de escrever na stream
+    const buffer = await workbook.xlsx.writeBuffer();
+
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename="cartucho_ak.xlsx"');
-    await workbook.xlsx.write(res);
-    res.end();
+    res.send(buffer);
 
   } catch (error) {
     res.status(500).json({ error: 'Falha', details: error.message });
