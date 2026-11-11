@@ -6,7 +6,8 @@ import {
   signOut, 
   onAuthStateChanged, 
   User,
-  UserCredential
+  UserCredential,
+  browserPopupRedirectResolver // NOVO IMPORT AQUI
 } from "firebase/auth";
 
 // Configuração do Firebase usando as variáveis de ambiente da Vercel
@@ -54,12 +55,11 @@ export function getAccessToken(): string | null {
   
   try {
     const { accessToken, expiresAt }: CachedToken = JSON.parse(raw);
-    // Retorna o token apenas se ainda faltar mais de 60 segundos para expirar
     if (Date.now() < expiresAt - 60000) {
       return accessToken;
     }
   } catch {
-    // Ignora erro de parse e retorna null
+    // Ignora erro de parse
   }
   return null;
 }
@@ -72,7 +72,8 @@ export async function googleSignIn(): Promise<{ user: User; accessToken: string 
   SCOPES.forEach(scope => provider.addScope(scope));
 
   try {
-    const result: UserCredential = await signInWithPopup(auth, provider);
+    // A MUDANÇA ESTÁ AQUI: Forçando o resolvedor de popup
+    const result: UserCredential = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     
     if (!credential?.accessToken) {
@@ -83,7 +84,6 @@ export async function googleSignIn(): Promise<{ user: User; accessToken: string 
     return { user: result.user, accessToken: credential.accessToken };
   } catch (error: any) {
     console.error("Erro no login com Google:", error);
-    // Repassa o erro para a UI tratar (ex: auth/popup-closed-by-user)
     throw error; 
   }
 }
@@ -98,7 +98,6 @@ export async function logoutGoogle(): Promise<void> {
 
 /**
  * Inicializa o listener de autenticação.
- * Restaura a sessão se o Firebase já tiver o usuário logado E o token for válido.
  */
 export function initAuth(
   onSuccess: (user: User, accessToken: string) => void,
@@ -110,8 +109,6 @@ export function initAuth(
       if (token) {
         onSuccess(user, token);
       } else {
-        // Usuário está logado no Firebase, mas o token do Sheets expirou ou não existe.
-        // O app precisa disparar um novo popup de login para pegar um novo token de Sheets.
         onFailure();
       }
     } else {
