@@ -54,6 +54,7 @@ import {
   formatarTelefone,
   limparCnpj,
   limparDigitos,
+  consultarCnpj, // Import necessário para o enriquecimento em lote
 } from './services/cnpjService';
 import { normalizarParaClient } from './types/Client';
 import { User } from 'firebase/auth';
@@ -153,6 +154,11 @@ export default function App() {
   const [isInstallOpen, setIsInstallOpen] = useState(false);
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
   const [isBannerExpanded, setIsBannerExpanded] = useState(false);
+
+  // --- ESTADOS DO ENRIQUECIMENTO EM LOTE ---
+  const [isEnriching, setIsEnriching] = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState(0);
+  const [enrichTotal, setEnrichTotal] = useState(0);
 
   const [usuarioAtivo, setUsuarioAtivo] = useState<{
     nome: string;
@@ -544,6 +550,52 @@ export default function App() {
     });
     if (alterado) setLeads(leadsBackfillados);
   }, []);
+
+  // --- FUNÇÃO DE ENRIQUECIMENTO EM LOTE ---
+  const handleBatchEnrich = async () => {
+    const leadsParaEnriquecer = leads.filter(l => !l.cnaeCodigo || l.razaoSocial === 'Empresa');
+    if (leadsParaEnriquecer.length === 0) {
+      alert('Nenhum lead pendente de enriquecimento.');
+      return;
+    }
+
+    setIsEnriching(true);
+    setEnrichTotal(leadsParaEnriquecer.length);
+    setEnrichProgress(0);
+
+    for (let i = 0; i < leadsParaEnriquecer.length; i++) {
+      const lead = leadsParaEnriquecer[i];
+      try {
+        const dados = await consultarCnpj(lead.cnpj);
+        if (dados) {
+          const leadAtualizado: Lead = {
+            ...lead,
+            razaoSocial: dados.razao_social || lead.razaoSocial,
+            nomeFantasia: dados.nome_fantasia || lead.nomeFantasia,
+            empresaExibicao: dados.nome_fantasia || dados.razao_social || lead.empresaExibicao,
+            cnaeCodigo: dados.cnae_fiscal ? String(dados.cnae_fiscal) : lead.cnaeCodigo,
+            cnaeDescricao: dados.cnae_fiscal_descricao || lead.cnaeDescricao,
+            logradouro: dados.logradouro || lead.logradouro,
+            numero: dados.numero || lead.numero,
+            bairro: dados.bairro || lead.bairro,
+            municipio: dados.municipio || lead.municipio,
+            uf: dados.uf || lead.uf,
+            cep: dados.cep || lead.cep,
+            dataAbertura: dados.data_inicio_atividade || lead.dataAbertura,
+          };
+          handleUpdateLead(leadAtualizado);
+        }
+      } catch (error) {
+        console.warn(`Erro ao enriquecer ${lead.cnpj}:`, error);
+      }
+      setEnrichProgress(prev => prev + 1);
+      // Pausa de 20 segundos para respeitar o rate limit da API
+      await new Promise(r => setTimeout(r, 20000));
+    }
+
+    setIsEnriching(false);
+    alert('Enriquecimento em lote concluído!');
+  };
 
   const handleUpdateLeadStatus = (
     leadId: string,
@@ -1050,6 +1102,11 @@ export default function App() {
         onOpenMetas={() => setIsMetasOpen(true)}
         onOpenNotifications={() => setIsNotificationModalOpen(true)}
         followupsHojeCount={followupsHojeCount}
+        // --- PROPS DO ENRIQUECIMENTO ---
+        isEnriching={isEnriching}
+        enrichProgress={enrichProgress}
+        enrichTotal={enrichTotal}
+        onEnrichAll={handleBatchEnrich}
       />
 
       <main className="flex-1 max-w-7xl lg:max-w-none w-full mx-auto p-1 space-y-3 sm:space-y-4">
