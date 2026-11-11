@@ -1041,7 +1041,6 @@ export default function App() {
         leads={leads}
         onOpenBulkImport={() => setIsBulkImportOpen(true)}
         onOpenSingleLead={() => setIsSingleLeadOpen(true)}
-        onOpenMining={() => setIsMiningOpen(true)}
         onOpenCartuchos={() => setIsCartuchosOpen(true)}
         onOpenTemplates={() => setIsTemplatesOpen(true)}
         onExportCsv={() => exportarLeadsCsv(leads)}
