@@ -550,7 +550,7 @@ export default function App() {
     if (alterado) setLeads(leadsBackfillados);
   }, []);
 
-  // --- FUNÇÃO DE ENRIQUECIMENTO BLINDADA (LÊ DO LOCALSTORAGE E RESPEITA A FILA) ---
+  // --- FUNÇÃO DE ENRIQUECIMENTO BLINDADA (SALVA DIRETO NO BANCO LOCAL) ---
   const handleBatchEnrich = async () => {
     let filaIds: string[] = [];
     const filaSalva = localStorage.getItem('ictx_enrich_fila');
@@ -594,11 +594,12 @@ export default function App() {
     while (filaIds.length > 0) {
       const leadId = filaIds[0];
       
-      // A MÁGICA ACONTECE AQUI: Pega os dados FRESCOS do localStorage, não do estado React!
+      // Pega os dados FRESCOS do localStorage
       const leadsAtuais = carregarLeads();
-      const lead = leadsAtuais.find(l => l.id === leadId);
+      const index = leadsAtuais.findIndex(l => l.id === leadId);
 
-      if (lead) {
+      if (index !== -1) {
+        const lead = leadsAtuais[index];
         try {
           const dados = await consultarCnpj(lead.cnpj);
           if (dados) {
@@ -640,14 +641,22 @@ export default function App() {
               telefoneSecundario: novoTelSecundario || undefined,
               telefoneSecundarioFormatado: novoTelSecundario ? formatarTelefone(novoTelSecundario) : undefined,
             };
-            handleUpdateLead(leadAtualizado);
+
+            // A MÁGICA ACONTECE AQUI: Salva no localStorage e atualiza o React
+            leadsAtuais[index] = autocorrigeLead(leadAtualizado);
+            salvarLeads(leadsAtuais); 
+            setLeads([...leadsAtuais]); 
+            
+            if (leadParaDetalhes?.id === leadId) {
+              setLeadParaDetalhes(autocorrigeLead(leadAtualizado));
+            }
           }
         } catch (error) {
           console.warn(`Erro ao enriquecer ${lead.cnpj}:`, error);
         }
       }
 
-      // Remove o lead processado (ou com erro) do topo da fila e salva
+      // Remove o lead processado do topo da fila e salva
       filaIds.shift();
       localStorage.setItem('ictx_enrich_fila', JSON.stringify(filaIds));
       
@@ -670,7 +679,6 @@ export default function App() {
       const fila = JSON.parse(filaSalva);
       if (fila.length > 0) {
         console.log('Retomando enriquecimento da fila salva...');
-        // Pequeno delay para garantir que os leads foram carregados no estado
         setTimeout(() => handleBatchEnrich(), 1000);
       }
     }
