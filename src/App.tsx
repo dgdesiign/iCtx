@@ -40,7 +40,6 @@ import {
 } from './services/notificationService';
 import {
   Sparkles,
-  CheckCircle2,
   Smartphone,
   FileSpreadsheet,
   ChevronDown,
@@ -49,7 +48,6 @@ import {
   ClipboardPaste,
 } from 'lucide-react';
 import {
-  construirLead,
   autocorrigeLead,
   formatarCnpj,
   formatarNome,
@@ -217,7 +215,7 @@ export default function App() {
     });
   }, [leads, busca, filtroStatus, filtroCadencia]);
 
-  const leadsEquipe = useMemo(() => {
+  const leadsEquipe: EquipeMembro[] = useMemo(() => {
     return [
       {
         nome: usuarioAtivo.nome,
@@ -1047,21 +1045,10 @@ export default function App() {
         onOpenInstallModal={() => setIsInstallOpen(true)}
         onOpenGoogleSheets={() => setIsGoogleModalOpen(true)}
         isGoogleConnected={Boolean(currentUser && spreadsheet)}
-        isGoogleSyncing={isGoogleSyncing}
-        dirtyCount={dirtyCount}
-        pendingSyncCount={pendingSyncCount}
         isSupervisor={usuarioAtivo.role === 'supervisor'}
-        usuarioRole={usuarioAtivo.role}
         onOpenSupervisorDashboard={() => setIsSupervisorOpen(true)}
         onOpenMetas={() => setIsMetasOpen(true)}
-        onToggleRole={() =>
-          setUsuarioAtivo((prev) => ({
-            ...prev,
-            role: prev.role === 'supervisor' ? 'executivo' : 'supervisor',
-          }))
-        }
         onOpenNotifications={() => setIsNotificationModalOpen(true)}
-        notificationStatus={notificationPermission}
         followupsHojeCount={followupsHojeCount}
       />
 
