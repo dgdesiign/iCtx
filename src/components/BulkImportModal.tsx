@@ -8,7 +8,7 @@ import {
   Loader2,
   Info,
 } from 'lucide-react';
-import * as XLSX from 'xlsx'; // NOVA BIBLIOTECA AQUI
+import * as XLSX from 'xlsx';
 import { Lead } from '../types/crm';
 import {
   construirLead,
@@ -16,6 +16,7 @@ import {
   formatarCnpj,
   formatarNome,
   extrairTokensInteligente,
+  limparDigitos,
 } from '../services/cnpjService';
 
 interface BulkImportModalProps {
@@ -100,7 +101,6 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
   const totalDuplicados = previewRows.filter((r) => r.duplicado).length;
   const totalInvalidos = previewRows.filter((r) => !r.valido).length;
 
-  // FUNÇÃO ATUALIZADA PARA LER EXCEL (.XLSX)
   const handleCarregarArquivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -111,11 +111,7 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
         const workbook = XLSX.read(buffer, { type: 'array' });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         
-        // Converte para um Array de Arrays (Linhas e Colunas)
         const data = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
-        
-        // Transforma as colunas de volta em texto separado por TAB 
-        // (Assim a sua função extrairTokensInteligente continua funcionando sem precisar mudar nada!)
         const textoConvertido = data.map(row => row.join('\t')).join('\n');
         
         setTextoEntrada(textoConvertido);
@@ -123,7 +119,6 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
         alert("Erro ao ler o arquivo Excel. Certifique-se de que é um .xlsx válido.");
       }
     } else {
-      // Leitura normal para CSV/TXT
       const reader = new FileReader();
       reader.onload = (event) => {
         const content = event.target?.result as string;
@@ -164,6 +159,26 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
       } catch (err) {
         console.warn('Erro ao consultar CNPJ:', linha.cnpjLimpo, err);
       }
+
+      // --- NOVA LÓGICA DE TELEFONE (PRIORIZA WHATSAPP) ---
+      if (dadosApi) {
+        const tel1 = dadosApi.ddd_telefone_1 || '';
+        const tel2 = dadosApi.ddd_telefone_2 || '';
+        const isCel1 = limparDigitos(tel1).length === 11 && limparDigitos(tel1)[2] === '9';
+        const isCel2 = limparDigitos(tel2).length === 11 && limparDigitos(tel2)[2] === '9';
+
+        if (isCel1) {
+          linha.telefoneBruto = tel1;
+          if (isCel2 || limparDigitos(tel2).length >= 10) linha.telefoneSecundarioBruto = tel2;
+        } else if (isCel2) {
+          linha.telefoneBruto = tel2;
+          if (limparDigitos(tel1).length >= 10) linha.telefoneSecundarioBruto = tel1;
+        } else {
+          if (!linha.telefoneBruto) linha.telefoneBruto = tel1 || tel2;
+          if (!linha.telefoneSecundarioBruto) linha.telefoneSecundarioBruto = tel2;
+        }
+      }
+      // ----------------------------------------------------
 
       const lead = construirLead(
         linha.telefoneBruto,
