@@ -46,15 +46,14 @@ async function run() {
           const data = JSON.parse(rawText);
           const empresas = data.cnpjs || data.empresas || [];
           
-          // Adiciona os leads respeitando o limite rígido de 300
           for (const emp of empresas) {
             if (emp.cnpj) {
               leads.add(emp.cnpj);
-              if (leads.size >= LIMITE_CARTUCHO) break; // Trava interna
+              if (leads.size >= LIMITE_CARTUCHO) break;
             }
           }
           
-          console.log(`   -> Retorno da API: ${empresas.length} empresas. Total no cartucho: ${leads.size}`);
+          console.log(`   -> Retorno da API: ${empresas.length} empresas. Total: ${leads.size}`);
         } catch (e) {
           console.log(`   -> Erro ao ler JSON. Resposta: ${rawText.substring(0, 200)}`);
         }
@@ -65,9 +64,8 @@ async function run() {
       console.error(`   -> Erro na busca de ${alvo.bairro}:`, error.message);
     }
 
-    index++; // Avança o bairro independente de ter enchido o cartucho ou não
+    index++; 
     
-    // Se bateu os 300, quebra o loop externo e para de buscar
     if (leads.size >= LIMITE_CARTUCHO) {
       console.log("🛑 Limite de 300 leads atingido. Parando mineração.");
       break; 
@@ -80,6 +78,12 @@ async function run() {
   fs.writeFileSync('./bot/progresso.json', JSON.stringify(progresso, null, 2));
 
   console.log(`📦 Gerando cartucho com ${leads.size} leads...`);
+  
+  // Garante que a pasta 'cartuchos' existe
+  if (!fs.existsSync('./cartuchos')) {
+    fs.mkdirSync('./cartuchos');
+  }
+
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Leads AK');
   worksheet.columns = [{ header: 'CNPJ', key: 'cnpj', width: 20 }];
@@ -93,8 +97,9 @@ async function run() {
   const dataStr = new Date().toISOString().split('T')[0];
   const nomeArquivo = `cartucho_${dataStr}_${leads.size}leads.xlsx`;
 
-  await workbook.xlsx.writeFile(`./${nomeArquivo}`);
-  console.log(`✅ Sucesso! Arquivo ${nomeArquivo} criado.`);
+  // Salva dentro da pasta cartuchos
+  await workbook.xlsx.writeFile(`./cartuchos/${nomeArquivo}`);
+  console.log(`✅ Sucesso! Arquivo cartuchos/${nomeArquivo} criado.`);
 }
 
 run().catch(console.error);
