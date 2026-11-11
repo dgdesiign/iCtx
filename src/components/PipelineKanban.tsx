@@ -1,25 +1,10 @@
 import React, { useState } from 'react';
-import {
-  Search,
-  Filter,
-  LayoutGrid,
-  List,
-  Sparkles,
-  CheckCircle2,
-  Building2,
-  ChevronRight,
-  ArrowUpDown,
-  PhoneCall,
-  MessageCircle,
-  Bell,
-  AlertTriangle,
-} from 'lucide-react';
+import { Search, Filter, LayoutGrid, List, ArrowUpDown, Bell, AlertTriangle, Flame } from 'lucide-react';
 import { Lead, LeadStatus } from '../types/crm';
 import { ehFollowUpVencido } from '../utils/cadencia';
 import { calcularScore } from '../utils/scoring';
 import { calcularAtivacaoStatus } from '../utils/ativacao';
 import { LeadCard } from './LeadCard';
-import { LeadDetailDrawer } from './LeadDetailDrawer';
 
 export type CadenciaFiltro = 'todos' | 'followup_hoje' | 'score' | 'risco';
 
@@ -28,63 +13,28 @@ export interface ColunaKanbanConfig {
   titulo: string;
   subtitulo: string;
   corHeader: string;
-  badgeCor: string;
 }
 
 export const COLUNAS_KANBAN: ColunaKanbanConfig[] = [
-  {
-    id: 'novo',
-    titulo: 'Novos Leads',
-    subtitulo: 'Aguardando 1º contato',
-    corHeader: 'bg-blue-50/70 border-b border-blue-100 text-blue-900',
-    badgeCor: 'bg-blue-100 text-blue-800',
-  },
-  {
-    id: 'em_prospeccao',
-    titulo: 'Em Prospecção',
-    subtitulo: 'Cadência em andamento',
-    corHeader: 'bg-amber-50/70 border-b border-amber-100 text-amber-900',
-    badgeCor: 'bg-amber-100 text-amber-800',
-  },
-  {
-    id: 'negociacao',
-    titulo: 'Negociação',
-    subtitulo: 'Proposta e fechamento',
-    corHeader: 'bg-purple-50/70 border-b border-purple-100 text-purple-900',
-    badgeCor: 'bg-purple-100 text-purple-800',
-  },
-  {
-    id: 'fechado',
-    titulo: 'Fechado',
-    subtitulo: 'Conta/Máquina aberta',
-    corHeader: 'bg-emerald-50/70 border-b border-emerald-100 text-emerald-900',
-    badgeCor: 'bg-emerald-100 text-emerald-800',
-  },
-  {
-    id: 'descartado',
-    titulo: 'Descartado',
-    subtitulo: 'Sem interesse ou inválido',
-    corHeader: 'bg-slate-100/70 border-b border-slate-200 text-slate-800',
-    badgeCor: 'bg-slate-200 text-slate-700',
-  },
+  { id: 'novo', titulo: 'Novos Leads', subtitulo: 'Aguardando 1º contato', corHeader: 'bg-slate-100 text-slate-700' },
+  { id: 'em_prospeccao', titulo: 'Em Prospecção', subtitulo: 'Cadência em andamento', corHeader: 'bg-blue-50 text-blue-700' },
+  { id: 'negociacao', titulo: 'Negociação', subtitulo: 'Proposta e fechamento', corHeader: 'bg-purple-50 text-purple-700' },
+  { id: 'fechado', titulo: 'Fechado', subtitulo: 'Conta/Máquina aberta', corHeader: 'bg-emerald-50 text-emerald-700' },
+  { id: 'descartado', titulo: 'Descartado', subtitulo: 'Sem interesse', corHeader: 'bg-rose-50 text-rose-700' },
 ];
-
 
 interface PipelineKanbanProps {
   leads: Lead[];
   onOpenMessageComposer: (lead: Lead) => void;
   onOpenCallScript: (lead: Lead) => void;
-  onOpenDetails?: (lead: Lead) => void;
+  onOpenDetails: (lead: Lead) => void;
   onUpdateStatus: (leadId: string, status: LeadStatus) => void;
-  onDeleteLead?: (leadId: string) => void;
-  onUpdateLead?: (lead: Lead) => void;
   filtroCadencia: CadenciaFiltro;
   onFiltroCadenciaChange: (filtro: CadenciaFiltro) => void;
   busca: string;
   onBuscaChange: (busca: string) => void;
   filtroStatus: string;
   onFiltroStatusChange: (status: string) => void;
-  [key: string]: any;
 }
 
 export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
@@ -93,8 +43,6 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
   onOpenCallScript,
   onOpenDetails,
   onUpdateStatus,
-  onDeleteLead,
-  onUpdateLead,
   filtroCadencia,
   onFiltroCadenciaChange,
   busca,
@@ -102,30 +50,17 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
   filtroStatus,
   onFiltroStatusChange,
 }) => {
-  const [leadParaDetalhes, setLeadParaDetalhes] = useState<Lead | null>(null);
-  const [modoVisualizacao, setModoVisualizacao] = useState<'kanban' | 'tabela'>('kanban');
-  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [ordenarPor, setOrdenarPor] = useState<'data' | 'score'>('data');
-
-  const currentLeadDetalhes = leadParaDetalhes
-    ? leads.find((l) => l.id === leadParaDetalhes.id) || leadParaDetalhes
-    : null;
-
-  // Clique no card (qualquer área, exceto ícones) -> abre LeadDetailDrawer (Sniper, Teleprompter, Ficha Cadastral)
-  const handleOpenLeadDetails = (lead: Lead) => {
-    setLeadParaDetalhes(lead);
-    onOpenDetails?.(lead);
-  };
 
   const totalFollowUpsVencidos = leads.filter((l) => ehFollowUpVencido(l)).length;
   const totalLeadsQuentes = leads.filter((l) => calcularScore(l) >= 75).length;
+  const totalRisco = leads.filter(l => l.status === 'fechado' && calcularAtivacaoStatus(l) === 'risco').length;
 
-  // Filtragem de leads (Busca por texto + status dropdown + filtro de cadência/score combinados)
   const leadsFiltrados = leads.filter((lead) => {
     const textoBusca = busca.toLowerCase().trim();
     const buscaDigitos = busca.replace(/\D/g, '');
 
-    const telPrincipal = lead.telefonePrincipal || (lead as any).telefone || '';
+    const telPrincipal = lead.telefonePrincipal || '';
     const telSecundario = lead.telefoneSecundario || '';
     const telPrincipalDigitos = telPrincipal.replace(/\D/g, '');
     const telSecundarioDigitos = telSecundario.replace(/\D/g, '');
@@ -162,443 +97,142 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
   });
 
   return (
-    <div className="space-y-3 sm:space-y-4">
+    <div className="space-y-4">
       
-      {/* Barra de Filtros de Cadência & Follow-up (Sprint 1) */}
-      <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 text-xs no-scrollbar">
-        {/* Pílula 1: Follow-ups de hoje */}
+      {/* Filtros Premium */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
         <button
-          type="button"
-          onClick={() =>
-            onFiltroCadenciaChange(filtroCadencia === 'followup_hoje' ? 'todos' : 'followup_hoje')
-          }
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 shadow-2xs ${
+          onClick={() => onFiltroCadenciaChange(filtroCadencia === 'followup_hoje' ? 'todos' : 'followup_hoje')}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 border ${
             filtroCadencia === 'followup_hoje'
-              ? 'bg-rose-600 text-white shadow-xs ring-2 ring-rose-400/40'
-              : 'bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-200'
+              ? 'bg-rose-50 text-rose-700 border-rose-200 shadow-sm'
+              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
           }`}
-          title="Filtrar apenas leads com follow-up previsto para hoje ou já vencidos"
         >
-          <Bell className={`w-3.5 h-3.5 ${filtroCadencia === 'followup_hoje' ? 'text-white' : 'text-rose-600'}`} />
-          <span>Follow-ups de hoje</span>
-          <span
-            className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-              filtroCadencia === 'followup_hoje'
-                ? 'bg-white/20 text-white'
-                : totalFollowUpsVencidos > 0
-                ? 'bg-rose-100 text-rose-800'
-                : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            {totalFollowUpsVencidos}
-          </span>
+          <Bell className="w-3.5 h-3.5" />
+          <span>Follow-ups Hoje</span>
+          <span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded text-[10px]">{totalFollowUpsVencidos}</span>
         </button>
 
-        {/* Pílula 2: Filtro por Score (Leads Quentes ≥75) */}
         <button
-          type="button"
-          onClick={() =>
-            onFiltroCadenciaChange(filtroCadencia === 'score' ? 'todos' : 'score')
-          }
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer shrink-0 border ${
+          onClick={() => onFiltroCadenciaChange(filtroCadencia === 'score' ? 'todos' : 'score')}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 border ${
             filtroCadencia === 'score'
-              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs font-bold ring-2 ring-emerald-400/40'
-              : 'bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200'
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm'
+              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
           }`}
-          title="Filtrar apenas leads com Score Quente (≥75 pts)"
         >
-          <span>🔥</span>
+          <Flame className="w-3.5 h-3.5" />
           <span>Leads Quentes</span>
-          <span
-            className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-              filtroCadencia === 'score'
-                ? 'bg-white/20 text-white'
-                : totalLeadsQuentes > 0
-                ? 'bg-emerald-100 text-emerald-800'
-                : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            {totalLeadsQuentes}
-          </span>
+          <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded text-[10px]">{totalLeadsQuentes}</span>
         </button>
 
-        {/* Pílula: Ativações em risco */}
-        {(() => {
-          const totalRisco = leads.filter(l => 
-            l.status === 'fechado' && 
-            calcularAtivacaoStatus(l) === 'risco'
-          ).length;
-          return (
-            <button
-              type="button"
-              onClick={() => onFiltroCadenciaChange(
-                filtroCadencia === 'risco' ? 'todos' : 'risco'
-              )}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 shadow-2xs border ${
-                filtroCadencia === 'risco'
-                  ? 'bg-rose-600 text-white shadow-xs ring-2 ring-rose-400/40 border-rose-600'
-                  : 'bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-700 border-slate-200'
-              }`}
-              title="Leads em M1 expirando ou M2 sem ativação completa"
-            >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>Ativações em risco</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                filtroCadencia === 'risco'
-                  ? 'bg-white/20 text-white'
-                  : totalRisco > 0
-                    ? 'bg-rose-100 text-rose-800'
-                    : 'bg-slate-100 text-slate-600'
-              }`}>
-                {totalRisco}
-              </span>
-            </button>
-          );
-        })()}
-
-        {/* Pílula 3: Todos */}
         <button
-          type="button"
-          onClick={() => onFiltroCadenciaChange('todos')}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer shrink-0 border ${
-            filtroCadencia === 'todos'
-              ? 'bg-slate-900 text-white border-slate-900 shadow-xs font-bold'
-              : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+          onClick={() => onFiltroCadenciaChange(filtroCadencia === 'risco' ? 'todos' : 'risco')}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 border ${
+            filtroCadencia === 'risco'
+              ? 'bg-amber-50 text-amber-700 border-amber-200 shadow-sm'
+              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
           }`}
         >
-          <span>Todos</span>
-          <span
-            className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-              filtroCadencia === 'todos' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            {leads.length}
-          </span>
+          <AlertTriangle className="w-3.5 h-3.5" />
+          <span>Risco</span>
+          <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px]">{totalRisco}</span>
         </button>
       </div>
 
-      {/* Control Bar: Search, Filters & View Toggle */}
-      <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
-        
-        {/* Search Input */}
-        <div className="relative flex-1 max-w-md">
+      {/* Barra de Busca e Ordenação */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-2 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <div className="relative w-full sm:max-w-md">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           <input
             type="text"
             value={busca}
             onChange={(e) => onBuscaChange(e.target.value)}
-            placeholder="Buscar por empresa, contato, CNPJ ou cidade..."
-            className="w-full text-xs pl-9 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-600/20 focus:border-red-600 bg-slate-50/50"
+            placeholder="Buscar por empresa, contato, CNPJ..."
+            className="w-full text-sm pl-9 pr-4 py-2 bg-slate-50 border-none rounded-lg focus:outline-none focus:ring-2 focus:ring-red-100 text-slate-800 placeholder:text-slate-400 transition-all"
           />
-          {busca && (
-            <button
-              onClick={() => onBuscaChange('')}
-              className="absolute right-2.5 top-2.5 text-xs text-slate-400 hover:text-slate-600 cursor-pointer"
-            >
-              ×
-            </button>
-          )}
         </div>
 
-        {/* View Mode & Filter */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Status selector filter */}
-          <div className="flex items-center gap-1.5 text-xs text-slate-600">
-            <Filter className="w-3.5 h-3.5 text-slate-400" />
-            <select
-              value={filtroStatus}
-              onChange={(e) => onFiltroStatusChange(e.target.value)}
-              className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-red-600"
-            >
-              <option value="todos">Todas as etapas ({leads.length})</option>
-              {COLUNAS_KANBAN.map((col) => (
-                <option key={col.id} value={col.id}>
-                  {col.titulo} ({leads.filter((l) => l.status === col.id).length})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Seletor Ordenar por: Data | Score */}
-          <div className="flex items-center gap-1.5 text-xs text-slate-600">
-            <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-xs">
-              <button
-                type="button"
-                onClick={() => setOrdenarPor('data')}
-                className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
-                  ordenarPor === 'data'
-                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                    : 'text-slate-500 hover:text-slate-900'
-                }`}
-                title="Ordenar por data mais recente"
-              >
-                Data
-              </button>
-              <button
-                type="button"
-                onClick={() => setOrdenarPor('score')}
-                className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  ordenarPor === 'score'
-                    ? 'bg-white text-emerald-800 shadow-2xs font-bold'
-                    : 'text-slate-500 hover:text-slate-900'
-                }`}
-                title="Ordenar do maior score para o menor (leads mais quentes primeiro)"
-              >
-                <span>Score</span>
-                {ordenarPor === 'score' && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Toggle Kanban vs Tabela */}
-          <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-xs">
+        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 rounded-lg p-0.5 border border-slate-200">
             <button
-              type="button"
-              onClick={() => setModoVisualizacao('kanban')}
-              className={`px-2.5 py-1 rounded-md font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
-                modoVisualizacao === 'kanban'
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
+              onClick={() => setOrdenarPor('data')}
+              className={`px-2.5 py-1.5 rounded-md font-medium transition-colors ${ordenarPor === 'data' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-900'}`}
             >
-              <LayoutGrid className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Kanban</span>
+              Data
             </button>
             <button
-              type="button"
-              onClick={() => setModoVisualizacao('tabela')}
-              className={`px-2.5 py-1 rounded-md font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
-                modoVisualizacao === 'tabela'
-                  ? 'bg-white text-slate-900 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
+              onClick={() => setOrdenarPor('score')}
+              className={`px-2.5 py-1.5 rounded-md font-medium transition-colors ${ordenarPor === 'score' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-900'}`}
             >
-              <List className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Tabela</span>
+              Score
             </button>
           </div>
+          
+          <select
+            value={filtroStatus}
+            onChange={(e) => onFiltroStatusChange(e.target.value)}
+            className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-red-100 cursor-pointer"
+          >
+            <option value="todos">Todas as etapas</option>
+            {COLUNAS_KANBAN.map((col) => (
+              <option key={col.id} value={col.id}>{col.titulo}</option>
+            ))}
+          </select>
         </div>
-
       </div>
 
-      {/* Main View: Kanban Columns with Drag and Drop */}
-      {modoVisualizacao === 'kanban' && (
-        <div className="flex flex-row gap-4 overflow-x-auto h-full p-4 snap-x select-none scroll-smooth">
-          {COLUNAS_KANBAN.map((coluna) => {
-            const leadsDaColuna = leadsFiltrados.filter((l) => l.status === coluna.id);
-            const leadsDaColunaOrdenados = [...leadsDaColuna].sort((a, b) => {
-              if (ordenarPor === 'score') {
-                const scoreA = calcularScore(a);
-                const scoreB = calcularScore(b);
-                if (scoreB !== scoreA) {
-                  return scoreB - scoreA;
-                }
-              }
-              const dataA = new Date(a.atualizadoEm || a.criadoEm).getTime();
-              const dataB = new Date(b.atualizadoEm || b.criadoEm).getTime();
-              return dataB - dataA;
-            });
-            const isDragOver = dragOverColumn === coluna.id;
+      {/* Kanban Board */}
+      <div className="flex flex-row gap-4 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory no-scrollbar">
+        {COLUNAS_KANBAN.map((coluna) => {
+          const leadsDaColuna = leadsFiltrados.filter((l) => l.status === coluna.id);
+          const leadsOrdenados = [...leadsDaColuna].sort((a, b) => {
+            if (ordenarPor === 'score') {
+              return calcularScore(b) - calcularScore(a);
+            }
+            return new Date(b.atualizadoEm || b.criadoEm).getTime() - new Date(a.atualizadoEm || a.criadoEm).getTime();
+          });
 
-            return (
-              <div
-                key={coluna.id}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                  if (dragOverColumn !== coluna.id) {
-                    setDragOverColumn(coluna.id);
-                  }
-                }}
-                onDragLeave={() => {
-                  if (dragOverColumn === coluna.id) {
-                    setDragOverColumn(null);
-                  }
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const leadId = e.dataTransfer.getData('text/plain');
-                  if (leadId) {
-                    onUpdateStatus(leadId, coluna.id);
-                  }
-                  setDragOverColumn(null);
-                }}
-                className={`w-[280px] min-w-[280px] shrink-0 snap-start bg-slate-100/90 rounded-2xl flex flex-col max-h-[calc(100dvh-220px)] border transition-all duration-150 ${
-                  isDragOver
-                    ? 'border-red-500 ring-2 ring-red-400/50 bg-red-50/50 shadow-md scale-[1.01]'
-                    : 'border-slate-200 shadow-2xs'
-                }`}
-              >
-                {/* Column Header */}
-                <div className={`p-3.5 rounded-t-2xl border-b border-slate-200/80 ${coluna.corHeader}`}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800">
-                        {coluna.titulo}
-                      </h3>
-                      <p className="text-[11px] text-slate-500">
-                        {coluna.subtitulo}
-                      </p>
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-white text-slate-800 shadow-2xs tabular-nums border border-slate-200/60">
-                      {leadsDaColuna.length}
-                    </span>
-                  </div>
+          return (
+            <div
+              key={coluna.id}
+              className="w-[85vw] sm:w-[300px] shrink-0 snap-start bg-slate-50/80 rounded-2xl border border-slate-200/60 flex flex-col max-h-[calc(100dvh-220px)]"
+            >
+              {/* Column Header */}
+              <div className={`p-3 rounded-t-2xl border-b border-slate-200/60 flex items-center justify-between sticky top-0 z-10 backdrop-blur-sm ${coluna.corHeader}`}>
+                <div>
+                  <h3 className="font-bold text-xs uppercase tracking-wider">{coluna.titulo}</h3>
+                  <p className="text-[10px] opacity-70 font-medium">{coluna.subtitulo}</p>
                 </div>
-
-                {/* Cards Container */}
-                <div className="p-2.5 overflow-y-auto space-y-2 flex-1 pr-1.5">
-                  {isDragOver && (
-                    <div className="py-2.5 px-3 text-center text-xs font-bold text-red-700 bg-red-100/90 border-2 border-dashed border-red-400 rounded-xl animate-pulse">
-                      Solte aqui para mover para {coluna.titulo}
-                    </div>
-                  )}
-
-                  {leadsDaColunaOrdenados.length === 0 && !isDragOver ? (
-                    <div className="py-10 text-center text-xs text-slate-400 border-2 border-dashed border-slate-200 rounded-xl m-1">
-                      Arraste um lead para esta etapa
-                    </div>
-                  ) : (
-                    leadsDaColunaOrdenados.map((lead) => (
-                      <LeadCard
-                        key={lead.id}
-                        lead={lead}
-                        onOpenMessageComposer={onOpenMessageComposer}
-                        onOpenCallScript={onOpenCallScript}
-                        onOpenDetails={handleOpenLeadDetails}
-                        onUpdateStatus={onUpdateStatus}
-                      />
-                    ))
-                  )}
-                </div>
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-white/60 shadow-sm border border-black/5">
+                  {leadsDaColuna.length}
+                </span>
               </div>
-            );
-          })}
-        </div>
-      )}
 
-      {/* Alternative View: High-density Table */}
-      {modoVisualizacao === 'tabela' && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-semibold uppercase tracking-wider text-[11px]">
-                <tr>
-                  <th className="py-3 px-4">Empresa</th>
-                  <th className="py-3 px-3">Contato</th>
-                  <th className="py-3 px-3">CNPJ</th>
-                  <th className="py-3 px-3">Localidade</th>
-                  <th className="py-3 px-3">Idade</th>
-                  <th className="py-3 px-3">Etapa Atual</th>
-                  <th className="py-3 px-3">Pitch Sugerido</th>
-                  <th className="py-3 px-4 text-right">Ações Rápidas</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {leadsFiltrados.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-400">
-                      Nenhum lead encontrado com os filtros selecionados.
-                    </td>
-                  </tr>
+              {/* Cards */}
+              <div className="p-2 overflow-y-auto flex-1 space-y-2 no-scrollbar">
+                {leadsOrdenados.length === 0 ? (
+                  <div className="h-24 flex items-center justify-center border-2 border-dashed border-slate-200 rounded-xl text-xs text-slate-400 font-medium">
+                    Nenhum lead aqui
+                  </div>
                 ) : (
-                  [...leadsFiltrados]
-                    .sort((a, b) => {
-                      if (ordenarPor === 'score') {
-                        const scoreA = calcularScore(a);
-                        const scoreB = calcularScore(b);
-                        if (scoreB !== scoreA) {
-                          return scoreB - scoreA;
-                        }
-                      }
-                      const dataA = new Date(a.atualizadoEm || a.criadoEm).getTime();
-                      const dataB = new Date(b.atualizadoEm || b.criadoEm).getTime();
-                      return dataB - dataA;
-                    })
-                    .map((lead) => {
-                    const colConfig = COLUNAS_KANBAN.find((c) => c.id === lead.status);
-                    return (
-                      <tr key={lead.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-2.5 px-4">
-                          <button
-                            onClick={() => handleOpenLeadDetails(lead)}
-                            className="font-bold text-slate-900 hover:text-red-700 text-left cursor-pointer"
-                          >
-                            {lead.empresaExibicao}
-                          </button>
-                        </td>
-                        <td className="py-2.5 px-3 font-medium text-slate-800">
-                          {lead.nomeContato}
-                        </td>
-                        <td className="py-2.5 px-3 font-mono text-slate-500">
-                          {lead.cnpjFormatado}
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-500">
-                          {lead.municipio ? `${lead.municipio}/${lead.uf}` : '-'}
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-500">
-                          {lead.idadeEmpresa || '-'}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <select
-                            value={lead.status}
-                            onChange={(e) => onUpdateStatus(lead.id, e.target.value as LeadStatus)}
-                            className="text-xs font-semibold border border-slate-200 rounded px-2 py-0.5 bg-white text-slate-800"
-                          >
-                            {COLUNAS_KANBAN.map((col) => (
-                              <option key={col.id} value={col.id}>
-                                {col.titulo}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-600 truncate max-w-[150px]">
-                          {lead.produtoSugerido}
-                        </td>
-                        <td className="py-2.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => onOpenCallScript(lead)}
-                              className="p-1.5 text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-md transition-colors cursor-pointer"
-                              title="Ligação"
-                            >
-                              <PhoneCall className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => onOpenMessageComposer(lead)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md transition-colors cursor-pointer"
-                            >
-                              <MessageCircle className="w-3.5 h-3.5" />
-                              <span>Zap</span>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
+                  leadsOrdenados.map((lead) => (
+                    <LeadCard
+                      key={lead.id}
+                      lead={lead}
+                      onOpenMessageComposer={onOpenMessageComposer}
+                      onOpenCallScript={onOpenCallScript}
+                      onOpenDetails={onOpenDetails}
+                      onUpdateStatus={onUpdateStatus}
+                    />
+                  ))
                 )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Drawer Detalhes do Lead (Sniper, Teleprompter, Ficha Cadastral) */}
-      {currentLeadDetalhes && (
-        <LeadDetailDrawer
-          lead={currentLeadDetalhes}
-          isOpen={Boolean(currentLeadDetalhes)}
-          onClose={() => setLeadParaDetalhes(null)}
-          onUpdateStatus={onUpdateStatus}
-          onUpdateLead={onUpdateLead}
-          onOpenMessageComposer={onOpenMessageComposer}
-          onOpenCallScript={onOpenCallScript}
-        />
-      )}
-
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };
