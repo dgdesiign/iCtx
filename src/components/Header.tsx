@@ -14,6 +14,8 @@ import {
   RotateCw,
   CheckCircle2,
   Users,
+  Sparkles, // Ícone para o enriquecimento
+  Loader2,  // Ícone de loading para o enriquecimento
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -31,6 +33,11 @@ interface HeaderProps {
   onOpenMetas: () => void;
   onOpenNotifications: () => void;
   followupsHojeCount: number;
+  // --- PROPS DO ENRIQUECIMENTO ---
+  isEnriching: boolean;
+  enrichProgress: number;
+  enrichTotal: number;
+  onEnrichAll: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -48,6 +55,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenMetas,
   onOpenNotifications,
   followupsHojeCount,
+  isEnriching,
+  enrichProgress,
+  enrichTotal,
+  onEnrichAll,
 }) => {
   const totalLeads = leads.length;
   const leadsEmProspeccao = leads.filter(l => l.status === 'em_prospeccao' || l.status === 'contato_1' || l.status === 'contato_2' || l.status === 'contato_3').length;
@@ -97,6 +108,31 @@ export const Header: React.FC<HeaderProps> = ({
 
         <div className="flex items-center gap-1.5 sm:gap-2">
           
+          {/* --- BOTÃO DE ENRIQUECIMENTO EM LOTE --- */}
+          <button
+            onClick={onEnrichAll}
+            disabled={isEnriching}
+            className={`relative flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-2xs ${
+              isEnriching
+                ? 'text-amber-800 bg-amber-50 border border-amber-200'
+                : 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200'
+            }`}
+            title={isEnriching ? `Enriquecendo ${enrichProgress}/${enrichTotal}...` : "Enriquecer todos os leads pendentes"}
+          >
+            {isEnriching ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>{enrichProgress}/{enrichTotal}</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                <span className="hidden sm:inline">Enriquecer Base</span>
+              </>
+            )}
+          </button>
+          {/* --- FIM DO BOTÃO DE ENRIQUECIMENTO --- */}
+
           <button
             onClick={onOpenCartuchos}
             className="p-2 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors cursor-pointer shadow-2xs"
