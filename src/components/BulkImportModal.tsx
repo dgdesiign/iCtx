@@ -7,18 +7,14 @@ import {
   AlertTriangle,
   Loader2,
   Info,
-  ShieldCheck,
-  Building2,
-  Copy,
 } from 'lucide-react';
+import * as XLSX from 'xlsx'; // NOVA BIBLIOTECA AQUI
 import { Lead } from '../types/crm';
 import {
   construirLead,
   consultarCnpj,
   formatarCnpj,
   formatarNome,
-  limparCnpj,
-  limparDigitos,
   extrairTokensInteligente,
 } from '../services/cnpjService';
 
@@ -61,12 +57,10 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
   const [elegiveisPendentes, setElegiveisPendentes] = useState<Lead[]>([]);
   const [mostrarModalMenores, setMostrarModalMenores] = useState(false);
 
-  // Conjunto de CNPJs já cadastrados na base
   const cnpjsExistentes = new Set(existingLeads.map((l) => l.cnpj));
 
   if (!isOpen) return null;
 
-  // Analisa o texto colado e extrai as linhas com inteligência de tokens
   const analisarLinhas = (texto: string): ParsedRow[] => {
     const linhas = texto.split('\n');
     const parsed: ParsedRow[] = [];
@@ -78,7 +72,6 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
 
       const extraido = extrairTokensInteligente(trimmed);
 
-      // Se achou CNPJ válido com 14 dígitos
       if (extraido.cnpjLimpo && extraido.cnpjLimpo.length === 14) {
         const duplicado = cnpjsExistentes.has(extraido.cnpjLimpo) || cnpjsNoLote.has(extraido.cnpjLimpo);
 
@@ -107,9 +100,30 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
   const totalDuplicados = previewRows.filter((r) => r.duplicado).length;
   const totalInvalidos = previewRows.filter((r) => !r.valido).length;
 
-  const handleCarregarArquivo = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // FUNÇÃO ATUALIZADA PARA LER EXCEL (.XLSX)
+  const handleCarregarArquivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (!file) return;
+
+    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+      try {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        
+        // Converte para um Array de Arrays (Linhas e Colunas)
+        const data = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1 });
+        
+        // Transforma as colunas de volta em texto separado por TAB 
+        // (Assim a sua função extrairTokensInteligente continua funcionando sem precisar mudar nada!)
+        const textoConvertido = data.map(row => row.join('\t')).join('\n');
+        
+        setTextoEntrada(textoConvertido);
+      } catch (err) {
+        alert("Erro ao ler o arquivo Excel. Certifique-se de que é um .xlsx válido.");
+      }
+    } else {
+      // Leitura normal para CSV/TXT
       const reader = new FileReader();
       reader.onload = (event) => {
         const content = event.target?.result as string;
@@ -160,7 +174,6 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
       );
       novosLeads.push(lead);
 
-      // Pequena pausa (250ms) para respeitar limites da API pública
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
 
@@ -168,7 +181,6 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
     const menores: Lead[] = [];
 
     for (const lead of novosLeads) {
-      // Calcula idade em dias desde cnpjInicio ou data da Receita
       const ref = lead.cnpjInicio || lead.dataAbertura;
       if (ref) {
         const dtIni = new Date(ref);
@@ -180,18 +192,17 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
           elegiveis.push(lead);
         }
       } else {
-        elegiveis.push(lead); // sem data → assume elegível
+        elegiveis.push(lead);
       }
     }
 
     if (menores.length > 0) {
       setMenores1AnoDetectados(menores);
-      setElegiveisPendentes(elegiveis); // novo useState
+      setElegiveisPendentes(elegiveis); 
       setMostrarModalMenores(true);
       return;
     }
 
-    // Se não há menores, fluxo normal:
     onImportLeads(elegiveis);
     setResultadoFinal({ adicionados: elegiveis.length, duplicados: totalDuplicados });
     setEtapa('concluido');
@@ -201,7 +212,6 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         
-        {/* Header */}
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-emerald-50/70">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
@@ -224,7 +234,6 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
           </button>
         </div>
 
-        {/* Content based on stage */}
         <div className="p-5 overflow-y-auto flex-1 space-y-4">
           
           {etapa === 'colar' && (
@@ -244,10 +253,10 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
                   <span className="text-slate-300">·</span>
                   <label className="text-xs text-slate-600 hover:text-slate-900 font-medium cursor-pointer flex items-center gap-1">
                     <Upload className="w-3 h-3" />
-                    <span>Subir arquivo .csv/.txt</span>
+                    <span>Subir arquivo .xlsx/.csv/.txt</span>
                     <input
                       type="file"
-                      accept=".txt,.csv"
+                      accept=".txt,.csv,.xlsx,.xls"
                       onChange={handleCarregarArquivo}
                       className="hidden"
                     />
@@ -263,18 +272,13 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
                 className="w-full text-xs font-mono p-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 focus:border-emerald-600 bg-slate-50/50"
               />
 
-              {/* Format explanation tip */}
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 flex items-start gap-2.5">
                 <Info className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 <div className="leading-relaxed">
-                  <strong>Formato aceito:</strong> Copie diretamente do WhatsApp ou do Excel com{' '}
-                  <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono text-emerald-700">
-                    Telefone [TAB] Nome [TAB] CNPJ
-                  </code>. O robô ajusta zeros à esquerda automaticamente caso o CNPJ tenha 13 dígitos.
+                  <strong>Formatos aceitos:</strong> Excel (.xlsx), CSV ou texto. O sistema lê automaticamente se o arquivo for o retorno do Portal AK, identificando os CNPJs em qualquer coluna.
                 </div>
               </div>
 
-              {/* Parsing Preview Summary */}
               {previewRows.length > 0 && (
                 <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2">
                   <div className="flex items-center justify-between text-xs font-semibold">
@@ -290,7 +294,6 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Sample rows preview */}
                   <div className="max-h-32 overflow-y-auto border border-slate-100 rounded-lg text-[11px]">
                     <table className="w-full text-left">
                       <thead className="bg-slate-50 text-slate-500 border-b border-slate-100 sticky top-0">
@@ -326,7 +329,6 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
             </>
           )}
 
-          {/* Processing Screen */}
           {etapa === 'processando' && (
             <div className="py-8 text-center space-y-4">
               <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto animate-pulse">
@@ -341,7 +343,6 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
                 </p>
               </div>
 
-              {/* Progress Bar */}
               <div className="max-w-md mx-auto space-y-1.5">
                 <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden border border-slate-200">
                   <div
@@ -359,7 +360,6 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
             </div>
           )}
 
-          {/* Completed Screen */}
           {etapa === 'concluido' && (
             <div className="py-8 text-center space-y-4">
               <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
@@ -370,7 +370,7 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
                   Importação Concluída com Sucesso!
                 </h4>
                 <p className="text-sm text-slate-600 mt-1">
-                  <strong>{resultadoFinal.adicionados}</strong> novos leads enriquecidos com dados da Receita foram inseridos na coluna <strong>"Lead Novo"</strong> do seu Pipeline.
+                  <strong>{resultadoFinal.adicionados}</strong> novos leads enriquecidos foram inseridos na coluna <strong>"Lead Novo"</strong> do seu Pipeline.
                 </p>
                 {resultadoFinal.duplicados > 0 && (
                   <p className="text-xs text-slate-400 mt-1">
@@ -383,7 +383,6 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
 
         </div>
 
-        {/* Footer Actions */}
         <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
           {etapa === 'colar' && (
             <>
