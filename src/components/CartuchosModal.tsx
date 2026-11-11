@@ -23,13 +23,11 @@ export const CartuchosModal: React.FC<CartuchosModalProps> = ({ isOpen, onClose 
       setLoading(true);
       setError(null);
       try {
-        // Busca a lista de arquivos na raiz do repositório
         const response = await fetch('https://api.github.com/repos/dgdesiign/iCtx/contents/');
         if (!response.ok) throw new Error('Falha ao acessar o GitHub');
         
         const data = await response.json();
         
-        // Filtra apenas arquivos Excel e ordena do mais recente para o mais antigo
         const xlsxFiles = data
           .filter((f: any) => f.name.endsWith('.xlsx') && f.type === 'file')
           .sort((a: any, b: any) => b.name.localeCompare(a.name));
@@ -51,7 +49,6 @@ export const CartuchosModal: React.FC<CartuchosModalProps> = ({ isOpen, onClose 
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
         
-        {/* Header */}
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
@@ -67,7 +64,6 @@ export const CartuchosModal: React.FC<CartuchosModalProps> = ({ isOpen, onClose 
           </button>
         </div>
 
-        {/* Aviso Importante */}
         <div className="bg-amber-50 border-b border-amber-200 px-5 py-3 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <p className="text-xs text-amber-900 leading-relaxed font-medium">
@@ -75,7 +71,6 @@ export const CartuchosModal: React.FC<CartuchosModalProps> = ({ isOpen, onClose 
           </p>
         </div>
 
-        {/* Lista de Arquivos */}
         <div className="p-5 overflow-y-auto flex-1 bg-slate-50/50">
           {loading && (
             <div className="flex flex-col items-center justify-center py-10 text-slate-500 space-y-3">
