@@ -550,7 +550,7 @@ export default function App() {
     if (alterado) setLeads(leadsBackfillados);
   }, []);
 
-  // --- FUNÇÃO DE ENRIQUECIMENTO COM FILA PERSISTENTE (A PROVA DE F5) ---
+  // --- FUNÇÃO DE ENRIQUECIMENTO BLINDADA (LÊ DO LOCALSTORAGE E RESPEITA A FILA) ---
   const handleBatchEnrich = async () => {
     let filaIds: string[] = [];
     const filaSalva = localStorage.getItem('ictx_enrich_fila');
@@ -593,7 +593,10 @@ export default function App() {
 
     while (filaIds.length > 0) {
       const leadId = filaIds[0];
-      const lead = leads.find(l => l.id === leadId);
+      
+      // A MÁGICA ACONTECE AQUI: Pega os dados FRESCOS do localStorage, não do estado React!
+      const leadsAtuais = carregarLeads();
+      const lead = leadsAtuais.find(l => l.id === leadId);
 
       if (lead) {
         try {
@@ -664,8 +667,12 @@ export default function App() {
   useEffect(() => {
     const filaSalva = localStorage.getItem('ictx_enrich_fila');
     if (filaSalva && !isEnriching) {
-      console.log('Retomando enriquecimento da fila salva...');
-      handleBatchEnrich();
+      const fila = JSON.parse(filaSalva);
+      if (fila.length > 0) {
+        console.log('Retomando enriquecimento da fila salva...');
+        // Pequeno delay para garantir que os leads foram carregados no estado
+        setTimeout(() => handleBatchEnrich(), 1000);
+      }
     }
   }, []);
 
