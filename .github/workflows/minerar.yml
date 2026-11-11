@@ -20,7 +20,7 @@ jobs:
           node-version: '20'
 
       - name: 📦 Instalar bibliotecas
-        run: npm install exceljs
+        run: npm install exceljs --legacy-peer-deps
 
       - name: 🤖 Rodar o Minerador
         env:
