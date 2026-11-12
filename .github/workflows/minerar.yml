@@ -31,9 +31,10 @@ jobs:
 
       - name: 💾 Salvar o Cartucho no GitHub
         run: |
+          mkdir -p cartuchos
+          touch cartuchos/.gitkeep
           git config --global user.name 'Robo iCtx'
           git config --global user.email 'robo@ictx.com'
-          # O "git add ." garante que a pasta cartuchos seja criada se não existir
           git add .
           git commit -m "🤖 Novo cartucho gerado automaticamente [skip ci]" || echo "Nada para commitar"
           git push
