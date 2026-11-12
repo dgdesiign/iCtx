@@ -7,6 +7,7 @@ import {
   getRedirectResult,
   signOut, 
   onAuthStateChanged, 
+  authStateReady,
   User,
   UserCredential,
   browserPopupRedirectResolver
@@ -90,18 +91,13 @@ export async function logoutGoogle(): Promise<void> {
   sessionStorage.removeItem(TOKEN_STORAGE_KEY);
 }
 
-/**
- * IMPORTANTE: onSuccess é chamado mesmo SEM token (token vazio '').
- * O app vai considerar o usuário logado, mas os recursos do Google Sheets
- * só funcionam se o token existir. Isso evita o loop de "login → logout".
- */
 export function initAuth(
   onSuccess: (user: User, accessToken: string) => void,
   onFailure: () => void
 ) {
-  let isReady = false;
+  let unsub = () => {};
 
-  // 1) Processa o redirect PRIMEIRO (mobile)
+  // 1) Processa redirect (mobile) em background
   getRedirectResult(auth)
     .then((result) => {
       if (result) {
@@ -113,23 +109,25 @@ export function initAuth(
     })
     .catch((error) => {
       console.error('Erro no getRedirectResult:', error);
-    })
-    .finally(() => {
-      isReady = true;
     });
 
-  // 2) Listener de auth. Aceita user sem token (Sheets opcional)
-  return onAuthStateChanged(auth, (user) => {
-    if (!isReady && !user) {
-      // Ainda processando redirect, espera
-      return;
-    }
-    
-    if (user) {
-      const token = getAccessToken() || '';
-      onSuccess(user, token);
-    } else {
-      onFailure();
-    }
-  });
+  // 2) Espera o Firebase restaurar a sessão do IndexedDB
+  authStateReady(auth)
+    .then(() => {
+      // Agora o Firebase sabe com certeza se tem user ou não
+      unsub = onAuthStateChanged(auth, (user) => {
+        if (user) {
+          const token = getAccessToken() || '';
+          onSuccess(user, token);
+        } else {
+          onFailure();
+        }
+      });
+    })
+    .catch((err) => {
+      console.error('Erro no authStateReady:', err);
+      onFailure(); // Se falhar, ao menos destrava o loading
+    });
+
+  return () => unsub();
 }
