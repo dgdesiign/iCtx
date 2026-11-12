@@ -19,7 +19,6 @@ export const LeadCard: React.FC<LeadCardProps> = ({
   onOpenDetails,
 }) => {
   const scoreInfo = obterInfoScore(lead);
-  // AQUI ESTÁ A CORREÇÃO: O WhatsApp fica verde se tiver celular, independente do status
   const isWhatsAppValido = ehCelularBR(lead.telefonePrincipal);
 
   const renderScoreIcon = () => {
