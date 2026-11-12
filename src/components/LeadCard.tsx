@@ -1,6 +1,6 @@
 import React from 'react';
 import { Lead } from '../types/crm';
-import { MessageCircle, PhoneCall, Flame, Sun, Snowflake, QrCode, CreditCard } from 'lucide-react';
+import { MessageCircle, PhoneCall, Flame, Sun, Snowflake, QrCode, CreditCard, CheckCircle2 } from 'lucide-react';
 import { obterInfoScore } from '../utils/scoring';
 import { ehCelularBR } from '../utils/telefone';
 
@@ -12,17 +12,46 @@ interface LeadCardProps {
   onUpdateStatus: (leadId: string, status: Lead['status']) => void;
 }
 
+// Calcula os pontos REAIS conquistados (não o máximo)
+function calcularPontosReais(lead: Lead) {
+  const isMeiComum = lead.isMei && !lead.isMeiDesenquadrado;
+  if (isMeiComum) {
+    return { pontos: 0, max: 0, qualifica: false, contaAtiva: false, maquinaAtiva: false };
+  }
+
+  let isMaisDeUmAno = true;
+  const refDate = lead.cnpjInicio || lead.dataAbertura;
+  if (refDate) {
+    const dtIni = new Date(refDate);
+    const umAnoAtras = new Date();
+    umAnoAtras.setFullYear(umAnoAtras.getFullYear() - 1);
+    isMaisDeUmAno = dtIni <= umAnoAtras;
+  }
+
+  const maxPontos = isMaisDeUmAno ? 10 : 6;
+
+  const contaAtiva = (lead.pixCount ?? 0) >= 3 || Boolean(lead.contaAtivaEm);
+  const pontosConta = contaAtiva ? (isMaisDeUmAno ? 4 : 2) : 0;
+
+  const maquinaAtiva = (lead.maquinaVendas ?? 0) >= 500 || Boolean(lead.maquinaAtivaEm);
+  const pontosMaquina = maquinaAtiva ? (isMaisDeUmAno ? 6 : 4) : 0;
+
+  return {
+    pontos: pontosConta + pontosMaquina,
+    max: maxPontos,
+    qualifica: true,
+    contaAtiva,
+    maquinaAtiva,
+  };
+}
+
 export const LeadCard: React.FC<LeadCardProps> = ({
   lead, onOpenMessageComposer, onOpenCallScript, onOpenDetails,
 }) => {
   const scoreInfo = obterInfoScore(lead);
   const isWhatsAppValido = ehCelularBR(lead.telefonePrincipal);
+  const infoPontos = calcularPontosReais(lead);
 
-  // Lógica correta dos indicadores
-  const pixAtivo = (lead.pixCount ?? 0) >= 3;
-  const maquinaAtiva = (lead.maquinaVendas ?? 0) >= 500;
-
-  // Fase M0/M1/M2 (só para fechados)
   const faseCiclo = (() => {
     if (lead.status !== 'fechado' || !lead.dataFechamento) return null;
     const dias = Math.floor((Date.now() - new Date(lead.dataFechamento).getTime()) / 86400000);
@@ -39,9 +68,6 @@ export const LeadCard: React.FC<LeadCardProps> = ({
     if (scoreInfo.categoria === 'medio') return <Sun className="w-3 h-3 text-amber-500" />;
     return <Snowflake className="w-3 h-3 text-slate-400" />;
   };
-
-  // Pontos possíveis (para mostrar 0/10 ou 0/6)
-  const pontosBase = lead.isMeiDesenquadrado ? 10 : (lead.isMei ? 6 : 10);
 
   return (
     <div
@@ -64,13 +90,34 @@ export const LeadCard: React.FC<LeadCardProps> = ({
       </div>
 
       {/* Régua: Cadência, Pontos, Fase */}
-      <div className="flex items-center gap-1 text-[9px] font-bold">
+      <div className="flex items-center gap-1 text-[9px] font-bold flex-wrap">
+        {/* Cadência */}
         <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
           {lead.cadenciaContatos ?? 0}/3
         </span>
-        <span className="bg-amber-50 text-amber-800 px-1.5 py-0.5 rounded border border-amber-200">
-          {pontosBase}/10
+        
+        {/* Pontos: REAIS/MAX. Verde com ✓ se tem pontos, cinza se 0 */}
+        <span
+          className={`px-1.5 py-0.5 rounded border flex items-center gap-0.5 ${
+            !infoPontos.qualifica
+              ? 'bg-slate-100 text-slate-400 border-slate-200'
+              : infoPontos.pontos > 0
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : 'bg-slate-100 text-slate-500 border-slate-200'
+          }`}
+          title={
+            !infoPontos.qualifica
+              ? 'MEI comum não qualifica para pontos'
+              : `${infoPontos.pontos} de ${infoPontos.max} pontos ativos`
+          }
+        >
+          {infoPontos.qualifica && infoPontos.pontos > 0 && (
+            <CheckCircle2 className="w-2.5 h-2.5" />
+          )}
+          {infoPontos.qualifica ? `${infoPontos.pontos}/${infoPontos.max}` : 'N/Q'}
         </span>
+        
+        {/* Fase M0/M1/M2 (só fechados) */}
         {faseCiclo && (
           <span className="bg-emerald-50 text-emerald-800 px-1.5 py-0.5 rounded border border-emerald-200">
             {faseCiclo}
@@ -78,28 +125,39 @@ export const LeadCard: React.FC<LeadCardProps> = ({
         )}
       </div>
 
-      {/* Footer: Indicadores + Ações */}
+      {/* Footer: Indicadores Pix/Máq + Ações WhatsApp/Telefone */}
       <div className="flex items-center justify-between pt-1.5 border-t border-slate-100">
         {/* Indicadores (não clicáveis) */}
         <div className="flex items-center gap-1">
           <div
-            className={`p-1 rounded ${pixAtivo ? 'text-emerald-600' : 'text-slate-300'}`}
-            title={pixAtivo ? `PIX ativo (${lead.pixCount}/3)` : `PIX pendente (${lead.pixCount ?? 0}/3)`}
+            className={`p-1 rounded ${infoPontos.contaAtiva ? 'text-emerald-600' : 'text-slate-300'}`}
+            title={
+              infoPontos.contaAtiva
+                ? `PIX ativo (${lead.pixCount ?? 3}/3)`
+                : `PIX pendente (${lead.pixCount ?? 0}/3)`
+            }
           >
             <QrCode className="w-3.5 h-3.5" />
           </div>
           <div
-            className={`p-1 rounded ${maquinaAtiva ? 'text-emerald-600' : 'text-slate-300'}`}
-            title={maquinaAtiva ? `Máquina ativa (R$ ${lead.maquinaVendas})` : `Máquina pendente (R$ ${lead.maquinaVendas ?? 0})`}
+            className={`p-1 rounded ${infoPontos.maquinaAtiva ? 'text-emerald-600' : 'text-slate-300'}`}
+            title={
+              infoPontos.maquinaAtiva
+                ? `Máquina ativa (R$ ${lead.maquinaVendas ?? 500})`
+                : `Máquina pendente (R$ ${lead.maquinaVendas ?? 0})`
+            }
           >
             <CreditCard className="w-3.5 h-3.5" />
           </div>
         </div>
 
-        {/* Ações (clicáveis) */}
+        {/* Ações */}
         <div className="flex items-center gap-0.5">
           <button
-            onClick={(e) => { e.stopPropagation(); onOpenMessageComposer(lead); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenMessageComposer(lead);
+            }}
             className={`p-1 rounded transition-colors ${
               isWhatsAppValido ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-300 cursor-not-allowed'
             }`}
@@ -109,7 +167,10 @@ export const LeadCard: React.FC<LeadCardProps> = ({
             <MessageCircle className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); onOpenCallScript(lead); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenCallScript(lead);
+            }}
             className="p-1 rounded text-indigo-600 hover:bg-indigo-50 transition-colors"
             title="Ligar"
           >
