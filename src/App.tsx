@@ -33,12 +33,24 @@ import { ProfileModal } from './components/ProfileModal';
 import { FloatingActions } from './components/FloatingActions';
 import { useMiningStatus } from './hooks/useMiningStatus';
 import { getNotificationPermissionStatus, setupDaily9AmReminder, NotificationStatus } from './services/notificationService';
-import { Sparkles, Smartphone, FileSpreadsheet, ChevronDown, ChevronUp, Database, ClipboardPaste, Loader2 } from 'lucide-react';
-import { autocorrigeLead, formatarCnpj, formatarNome, formatarTelefone, limparCnpj, limparDigitos, consultarCnpj } from './services/cnpjService';
-import { normalizarParaClient } from './types/Client';
+import { Loader2 } from 'lucide-react';
+import {
+  autocorrigeLead,
+  formatarCnpj,
+  formatarNome,
+  formatarTelefone,
+  limparCnpj,
+  limparDigitos,
+  consultarCnpj,
+} from './services/cnpjService';
 import { User } from 'firebase/auth';
-import { googleSignIn, logoutGoogle, initAuth, getAccessToken, setCachedAccessToken } from './services/googleAuthService';
-import { findOrCreateSpreadsheet, fetchLeadsFromSheet, saveAllLeadsToSheet, appendContactLogToSheet, SpreadsheetInfo } from './services/googleSheetsService';
+import {
+  googleSignIn, logoutGoogle, initAuth, getAccessToken, setCachedAccessToken,
+} from './services/googleAuthService';
+import {
+  findOrCreateSpreadsheet, fetchLeadsFromSheet, saveAllLeadsToSheet,
+  appendContactLogToSheet, SpreadsheetInfo,
+} from './services/googleSheetsService';
 
 const carregarBaseSync = (): Record<string, string> => {
   try {
@@ -104,7 +116,7 @@ export default function App() {
   const [isMetasOpen, setIsMetasOpen] = useState(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationStatus>(() => getNotificationPermissionStatus());
-  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [isBatchModalOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isSingleLeadOpen, setIsSingleLeadOpen] = useState(false);
   const [isMiningOpen, setIsMiningOpen] = useState(false);
@@ -115,17 +127,14 @@ export default function App() {
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isInstallOpen, setIsInstallOpen] = useState(false);
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
-  const [isBannerExpanded, setIsBannerExpanded] = useState(false);
 
   const [isEnriching, setIsEnriching] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState(0);
   const [enrichTotal, setEnrichTotal] = useState(0);
 
-  const [usuarioAtivo, setUsuarioAtivo] = useState<{ nome: string; email: string; role: 'supervisor' | 'executivo'; }>({
+  const [usuarioAtivo] = useState<{ nome: string; email: string; role: 'supervisor' | 'executivo'; }>({
     nome: 'Douglas Krüger', email: 'dr.douglasilva@gmail.com', role: 'supervisor',
   });
-
-  const followupsHojeCount = useMemo(() => leads.filter((l) => ehFollowUpVencido(l)).length, [leads]);
 
   useEffect(() => {
     const cleanup = setupDaily9AmReminder(() => leads);
@@ -180,13 +189,10 @@ export default function App() {
     if (spreadsheet) localStorage.setItem('ictx_google_spreadsheet', JSON.stringify(spreadsheet));
   }, [spreadsheet]);
 
-  const [pendingSyncCount, setPendingSyncCount] = useState(0);
-
   async function executarComRetry(fn: () => Promise<void>): Promise<void> {
-    try { await fn(); setPendingSyncCount(0); }
+    try { await fn(); }
     catch (e: any) {
-      if (e?.message === 'TOKEN_EXPIRADO') setPendingSyncCount((prev) => prev + 1);
-      else throw e;
+      if (e?.message !== 'TOKEN_EXPIRADO') throw e;
     }
   }
 
@@ -200,9 +206,11 @@ export default function App() {
     const unsubscribe = initAuth(
       async (user, token) => {
         setCurrentUser(user);
-        setCachedAccessToken(token);
+        if (token) setCachedAccessToken(token);
         setIsAuthChecking(false);
-        if (!firstMergeDoneRef.current && spreadsheet?.id) {
+        
+        // A CORREÇÃO ESTÁ AQUI: Só faz o merge se tivermos um token válido
+        if (token && !firstMergeDoneRef.current && spreadsheet?.id) {
           try {
             setIsGoogleSyncing(true);
             isLoadingFromSheetRef.current = true;
@@ -270,7 +278,6 @@ export default function App() {
   const handleBatchEnrich = async () => {
     let filaIds: string[] = [];
     const filaSalva = localStorage.getItem('ictx_enrich_fila');
-    
     if (filaSalva) { filaIds = JSON.parse(filaSalva); }
     else {
       const leadsParaEnriquecer = leads.filter(l => {
@@ -282,14 +289,11 @@ export default function App() {
         const temCelular = isCelular1 || isCelular2;
         return !temCelular || !l.cnaeCodigo || l.razaoSocial === 'Empresa';
       });
-
       if (leadsParaEnriquecer.length === 0) { alert('Nenhum lead pendente.'); return; }
-      
       filaIds = leadsParaEnriquecer.map(l => l.id);
       localStorage.setItem('ictx_enrich_fila', JSON.stringify(filaIds));
       localStorage.setItem('ictx_enrich_total', filaIds.length.toString());
     }
-
     if (filaIds.length === 0) { localStorage.removeItem('ictx_enrich_fila'); localStorage.removeItem('ictx_enrich_total'); return; }
 
     const totalOriginal = parseInt(localStorage.getItem('ictx_enrich_total') || filaIds.length.toString(), 10);
@@ -299,7 +303,6 @@ export default function App() {
       const leadId = filaIds[0];
       const leadsAtuais = carregarLeads();
       const index = leadsAtuais.findIndex(l => l.id === leadId);
-
       if (index !== -1) {
         const lead = leadsAtuais[index];
         try {
@@ -309,7 +312,6 @@ export default function App() {
             let tel2 = dados.ddd_telefone_2 ? limparDigitos(dados.ddd_telefone_2) : '';
             let isCelular1 = tel1.length === 11 && tel1[2] === '9';
             let isCelular2 = tel2.length === 11 && tel2[2] === '9';
-
             let novoTelPrincipal = lead.telefonePrincipal;
             let novoTelSecundario = lead.telefoneSecundario;
 
@@ -343,21 +345,18 @@ export default function App() {
               telefoneSecundario: novoTelSecundario || undefined,
               telefoneSecundarioFormatado: novoTelSecundario ? formatarTelefone(novoTelSecundario) : undefined,
             };
-
             leadsAtuais[index] = autocorrigeLead(leadAtualizado);
-            salvarLeads(leadsAtuais); 
-            setLeads([...leadsAtuais]); 
+            salvarLeads(leadsAtuais);
+            setLeads([...leadsAtuais]);
             if (leadParaDetalhes?.id === leadId) setLeadParaDetalhes(autocorrigeLead(leadAtualizado));
           }
         } catch (error) { console.warn(`Erro: ${lead.cnpj}`, error); }
       }
-
       filaIds.shift();
       localStorage.setItem('ictx_enrich_fila', JSON.stringify(filaIds));
       setEnrichProgress(totalOriginal - filaIds.length);
       if (filaIds.length > 0) await new Promise(r => setTimeout(r, 20000));
     }
-
     setIsEnriching(false);
     localStorage.removeItem('ictx_enrich_total');
     alert('Enriquecimento concluído!');
@@ -372,25 +371,21 @@ export default function App() {
   }, []);
 
   const handleUpdateLeadStatus = (leadId: string, novoStatus: LeadStatus, logInfo?: any) => {
-    setLeads((prevLeads) => {
-      const atualizados = prevLeads.map((l) => {
-        if (l.id !== leadId) return l;
-        const leadComCadencia = aplicarMudancaStatusCadencia(l, novoStatus);
-        let leadAtualizado = leadComCadencia;
-        if (novoStatus === 'fechado' && !leadAtualizado.dataFechamento) leadAtualizado = { ...leadAtualizado, dataFechamento: new Date().toISOString() };
-        
-        const historicoAtualizado = [...leadAtualizado.historicoContatos];
-        if (logInfo) {
-          historicoAtualizado.unshift({
-            id: `log_${Date.now()}`, dataHora: new Date().toISOString(),
-            tipo: logInfo.tipo, templateTitulo: logInfo.templateTitulo,
-            mensagemEnviada: logInfo.mensagem, observacao: logInfo.observacao,
-          });
-        }
-        return { ...leadAtualizado, historicoContatos: historicoAtualizado };
-      });
-      return atualizados;
-    });
+    setLeads((prevLeads) => prevLeads.map((l) => {
+      if (l.id !== leadId) return l;
+      const leadComCadencia = aplicarMudancaStatusCadencia(l, novoStatus);
+      let leadAtualizado = leadComCadencia;
+      if (novoStatus === 'fechado' && !leadAtualizado.dataFechamento) leadAtualizado = { ...leadAtualizado, dataFechamento: new Date().toISOString() };
+      const historicoAtualizado = [...leadAtualizado.historicoContatos];
+      if (logInfo) {
+        historicoAtualizado.unshift({
+          id: `log_${Date.now()}`, dataHora: new Date().toISOString(),
+          tipo: logInfo.tipo, templateTitulo: logInfo.templateTitulo,
+          mensagemEnviada: logInfo.mensagem, observacao: logInfo.observacao,
+        });
+      }
+      return { ...leadAtualizado, historicoContatos: historicoAtualizado };
+    }));
   };
 
   const registrarAcaoContato = (leadId: string, tipo: 'whatsapp' | 'ligacao', templateTitulo?: string) => {
@@ -405,7 +400,6 @@ export default function App() {
           dataHora: agoraIso, tipo, templateTitulo: templateTitulo || (tipo === 'whatsapp' ? 'WhatsApp Rápido' : 'Ligação'),
           observacao: 'Ação via CRM',
         }, ...(l.historicoContatos || [])];
-
         return {
           ...l, status: novoStatus, dataUltimoContato: agoraIso, ultimoContatoEm: agoraIso,
           proximoFollowUp: proxFollowUp || l.proximoFollowUp, tentativasContato: (l.tentativasContato || 0) + 1,
@@ -545,8 +539,6 @@ export default function App() {
 
   return (
     <div className="min-h-[100dvh] bg-slate-100 flex flex-col text-slate-800 pb-16 md:pb-0">
-      
-      {/* AQUI ESTÁ A CORREÇÃO: Passando a função para o Header */}
       <Header
         leads={leads}
         onOpenProfile={() => setIsProfileOpen(true)}
@@ -601,9 +593,9 @@ export default function App() {
       {isExportOpen && <ExportImportModal isOpen={true} onClose={() => setIsExportOpen(false)} leads={leads} templates={templates} onRestoreBackup={handleRestoreBackup} />}
       {isInstallOpen && <InstallAppModal isOpen={true} onClose={() => setIsInstallOpen(false)} />}
       {isGoogleModalOpen && <GoogleSheetsSyncModal isOpen={true} onClose={() => setIsGoogleModalOpen(false)} user={currentUser} spreadsheet={spreadsheet} isLoading={isGoogleSyncing} lastSyncTime={lastSyncTime} totalLeads={leads.length} onConnectGoogle={handleConnectGoogle} onSyncToSheet={handleSyncToSheet} onFetchFromSheet={handleFetchFromSheet} onDisconnect={handleDisconnectGoogle} />}
-      <BatchMessageModal isOpen={isBatchModalOpen} onClose={() => setIsBatchModalOpen(false)} leadsFiltrados={leadsFiltrados} templates={templates} onUpdateStatus={handleUpdateLeadStatus} />
+      <BatchMessageModal isOpen={isBatchModalOpen} onClose={() => {}} leadsFiltrados={leadsFiltrados} templates={templates} onUpdateStatus={handleUpdateLeadStatus} />
       {leadParaCoach && <CoachModal isOpen={true} onClose={() => setLeadParaCoach(null)} lead={leadParaCoach} onSaveCoachEvaluation={handleSaveCoachEvaluation} />}
-      <SupervisorDashboard isOpen={isSupervisorOpen} onClose={() => setIsSupervisorOpen(false)} leadsEquipe={leadsEquipe} usuarioAtivo={usuarioAtivo} onAlternarRole={(role) => setUsuarioAtivo((prev) => ({ ...prev, role }))} />
+      <SupervisorDashboard isOpen={isSupervisorOpen} onClose={() => setIsSupervisorOpen(false)} leadsEquipe={leadsEquipe} usuarioAtivo={usuarioAtivo} onAlternarRole={() => {}} />
       <NotificationModal isOpen={isNotificationModalOpen} onClose={() => setIsNotificationModalOpen(false)} permissionStatus={notificationPermission} onPermissionChange={(status) => setNotificationPermission(status)} leads={leads} onSelectLead={(lead) => setLeadParaDetalhes(lead)} />
       {isMetasOpen && <MetasDashboard isOpen={true} onClose={() => { setIsMetasOpen(false); setMobileTab('leads'); }} leads={leads} />}
       {!isMiningOpen && (miningStatus.status === 'rodando' || miningStatus.status === 'aguardando' || miningStatus.processando > 0) && <MiningFloatingWidget status={miningStatus} onReopen={() => setIsMiningOpen(true)} />}
@@ -634,7 +626,6 @@ export default function App() {
         modoVisualizacao={modoVisualizacao}
         onToggleVisualizacao={handleToggleVisualizacao}
       />
-
     </div>
   );
 }
