@@ -1,11 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  carregarLeads,
-  salvarLeads,
-  carregarTemplates,
-  salvarTemplates,
-  exportarLeadsCsv,
-  aplicarMudancaStatusCadencia,
+  carregarLeads, salvarLeads, carregarTemplates, salvarTemplates,
+  exportarLeadsCsv, aplicarMudancaStatusCadencia,
 } from './utils/storage';
 import { mergeLeads3, hashLead, isSampleLeadId } from './utils/syncMerge';
 import { Lead, LeadStatus, MessageTemplate, EquipeMembro } from './types/crm';
@@ -36,54 +32,19 @@ import { MobileNav } from './components/MobileNav';
 import { ProfileModal } from './components/ProfileModal';
 import { FloatingActions } from './components/FloatingActions';
 import { useMiningStatus } from './hooks/useMiningStatus';
-import {
-  getNotificationPermissionStatus,
-  setupDaily9AmReminder,
-  NotificationStatus,
-} from './services/notificationService';
-import {
-  Sparkles,
-  Smartphone,
-  FileSpreadsheet,
-  ChevronDown,
-  ChevronUp,
-  Database,
-  ClipboardPaste,
-  Loader2,
-} from 'lucide-react';
-import {
-  autocorrigeLead,
-  formatarCnpj,
-  formatarNome,
-  formatarTelefone,
-  limparCnpj,
-  limparDigitos,
-  consultarCnpj,
-} from './services/cnpjService';
+import { getNotificationPermissionStatus, setupDaily9AmReminder, NotificationStatus } from './services/notificationService';
+import { Sparkles, Smartphone, FileSpreadsheet, ChevronDown, ChevronUp, Database, ClipboardPaste, Loader2 } from 'lucide-react';
+import { autocorrigeLead, formatarCnpj, formatarNome, formatarTelefone, limparCnpj, limparDigitos, consultarCnpj } from './services/cnpjService';
 import { normalizarParaClient } from './types/Client';
 import { User } from 'firebase/auth';
-import {
-  googleSignIn,
-  logoutGoogle,
-  initAuth,
-  getAccessToken,
-  setCachedAccessToken,
-} from './services/googleAuthService';
-import {
-  findOrCreateSpreadsheet,
-  fetchLeadsFromSheet,
-  saveAllLeadsToSheet,
-  appendContactLogToSheet,
-  SpreadsheetInfo,
-} from './services/googleSheetsService';
+import { googleSignIn, logoutGoogle, initAuth, getAccessToken, setCachedAccessToken } from './services/googleAuthService';
+import { findOrCreateSpreadsheet, fetchLeadsFromSheet, saveAllLeadsToSheet, appendContactLogToSheet, SpreadsheetInfo } from './services/googleSheetsService';
 
 const carregarBaseSync = (): Record<string, string> => {
   try {
     const raw = localStorage.getItem('ictx_sync_base');
     return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
+  } catch { return {}; }
 };
 
 const salvarBaseSync = (listaLeads: Lead[]) => {
@@ -97,9 +58,7 @@ const salvarBaseSync = (listaLeads: Lead[]) => {
       }
     }
     localStorage.setItem('ictx_sync_base', JSON.stringify(base));
-  } catch (err) {
-    console.warn('Erro ao gravar base de sincronização no localStorage:', err);
-  }
+  } catch (err) { console.warn('Erro sync:', err); }
 };
 
 export default function App() {
@@ -118,32 +77,20 @@ export default function App() {
   const [leads, setLeads] = useState<Lead[]>(() => {
     const salvos = carregarLeads();
     if (salvos.length > 0) {
-      return salvos
-        .filter((l) => l && l.id && !isSampleLeadId(l.id))
-        .map((l) => {
-          const corrigido = autocorrigeLead(l);
-          let status = corrigido.status;
-          let cadencia = corrigido.cadenciaContatos;
-
-          if (status === 'contato_1' || status === 'contato_2' || status === 'contato_3') {
-            if (cadencia === undefined) {
-              cadencia = status === 'contato_1' ? 1 : status === 'contato_2' ? 2 : 3;
-            }
-            status = 'em_prospeccao';
-          }
-
-          const produtosAtivos = corrigido.produtosAtivos || {
-            conta: Boolean(corrigido.contaAtivaEm || (corrigido.pixCount ?? 0) >= 3),
-            maquina: Boolean(corrigido.maquinaAtivaEm || (corrigido.maquinaVendas ?? 0) >= 500),
-          };
-
-          return {
-            ...corrigido,
-            status,
-            cadenciaContatos: (cadencia ?? 0) as 0 | 1 | 2 | 3,
-            produtosAtivos,
-          };
-        });
+      return salvos.filter((l) => l && l.id && !isSampleLeadId(l.id)).map((l) => {
+        const corrigido = autocorrigeLead(l);
+        let status = corrigido.status;
+        let cadencia = corrigido.cadenciaContatos;
+        if (status === 'contato_1' || status === 'contato_2' || status === 'contato_3') {
+          if (cadencia === undefined) cadencia = status === 'contato_1' ? 1 : status === 'contato_2' ? 2 : 3;
+          status = 'em_prospeccao';
+        }
+        const produtosAtivos = corrigido.produtosAtivos || {
+          conta: Boolean(corrigido.contaAtivaEm || (corrigido.pixCount ?? 0) >= 3),
+          maquina: Boolean(corrigido.maquinaAtivaEm || (corrigido.maquinaVendas ?? 0) >= 500),
+        };
+        return { ...corrigido, status, cadenciaContatos: (cadencia ?? 0) as 0 | 1 | 2 | 3, produtosAtivos };
+      });
     }
     return [];
   });
@@ -156,9 +103,7 @@ export default function App() {
   const [isSupervisorOpen, setIsSupervisorOpen] = useState(false);
   const [isMetasOpen, setIsMetasOpen] = useState(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
-  const [notificationPermission, setNotificationPermission] = useState<NotificationStatus>(() =>
-    getNotificationPermissionStatus()
-  );
+  const [notificationPermission, setNotificationPermission] = useState<NotificationStatus>(() => getNotificationPermissionStatus());
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isSingleLeadOpen, setIsSingleLeadOpen] = useState(false);
@@ -176,19 +121,11 @@ export default function App() {
   const [enrichProgress, setEnrichProgress] = useState(0);
   const [enrichTotal, setEnrichTotal] = useState(0);
 
-  const [usuarioAtivo, setUsuarioAtivo] = useState<{
-    nome: string;
-    email: string;
-    role: 'supervisor' | 'executivo';
-  }>({
-    nome: 'Douglas Krüger',
-    email: 'dr.douglasilva@gmail.com',
-    role: 'supervisor',
+  const [usuarioAtivo, setUsuarioAtivo] = useState<{ nome: string; email: string; role: 'supervisor' | 'executivo'; }>({
+    nome: 'Douglas Krüger', email: 'dr.douglasilva@gmail.com', role: 'supervisor',
   });
 
-  const followupsHojeCount = useMemo(() => {
-    return leads.filter((l) => ehFollowUpVencido(l)).length;
-  }, [leads]);
+  const followupsHojeCount = useMemo(() => leads.filter((l) => ehFollowUpVencido(l)).length, [leads]);
 
   useEffect(() => {
     const cleanup = setupDaily9AmReminder(() => leads);
@@ -199,21 +136,15 @@ export default function App() {
     return leads.filter((lead) => {
       const textoBusca = busca.toLowerCase().trim();
       const buscaDigitos = busca.replace(/\D/g, '');
-
       const telPrincipal = lead.telefonePrincipal || (lead as any).telefone || '';
       const telSecundario = lead.telefoneSecundario || '';
-      const telPrincipalDigitos = telPrincipal.replace(/\D/g, '');
-      const telSecundarioDigitos = telSecundario.replace(/\D/g, '');
 
       const matchTelefone = Boolean(
-        (buscaDigitos.length > 0 &&
-          (telPrincipalDigitos.includes(buscaDigitos) || telSecundarioDigitos.includes(buscaDigitos))) ||
-        (textoBusca &&
-          (telPrincipal.toLowerCase().includes(textoBusca) || telSecundario.toLowerCase().includes(textoBusca)))
+        (buscaDigitos.length > 0 && (telPrincipal.replace(/\D/g, '').includes(buscaDigitos) || telSecundario.replace(/\D/g, '').includes(buscaDigitos))) ||
+        (textoBusca && (telPrincipal.toLowerCase().includes(textoBusca) || telSecundario.toLowerCase().includes(textoBusca)))
       );
 
-      const matchBusca =
-        !textoBusca ||
+      const matchBusca = !textoBusca ||
         lead.empresaExibicao.toLowerCase().includes(textoBusca) ||
         lead.nomeContato.toLowerCase().includes(textoBusca) ||
         lead.cnpj.includes(textoBusca) ||
@@ -223,98 +154,41 @@ export default function App() {
       const matchStatus = filtroStatus === 'todos' || lead.status === filtroStatus;
 
       const matchCadencia =
-        filtroCadencia === 'todos'
-          ? true
-          : filtroCadencia === 'followup_hoje'
-          ? ehFollowUpVencido(lead)
-          : filtroCadencia === 'score'
-          ? calcularScore(lead) >= 75
-          : filtroCadencia === 'risco'
-          ? (lead.status === 'fechado' && calcularAtivacaoStatus(lead) === 'risco')
-          : true;
+        filtroCadencia === 'todos' ? true
+        : filtroCadencia === 'followup_hoje' ? ehFollowUpVencido(lead)
+        : filtroCadencia === 'score' ? calcularScore(lead) >= 75
+        : filtroCadencia === 'risco' ? (lead.status === 'fechado' && calcularAtivacaoStatus(lead) === 'risco')
+        : true;
 
       return matchBusca && matchStatus && matchCadencia;
     });
   }, [leads, busca, filtroStatus, filtroCadencia]);
 
-  const leadsEquipe: EquipeMembro[] = useMemo(() => {
-    return [
-      {
-        nome: usuarioAtivo.nome,
-        email: usuarioAtivo.email,
-        role: usuarioAtivo.role,
-        payload: { leads },
-      },
-    ];
-  }, [leads, usuarioAtivo]);
+  const leadsEquipe: EquipeMembro[] = useMemo(() => ([{
+    nome: usuarioAtivo.nome, email: usuarioAtivo.email, role: usuarioAtivo.role, payload: { leads },
+  }]), [leads, usuarioAtivo]);
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [spreadsheet, setSpreadsheet] = useState<SpreadsheetInfo | null>(() => {
-    try {
-      const saved = localStorage.getItem('ictx_google_spreadsheet');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
+    try { const saved = localStorage.getItem('ictx_google_spreadsheet'); return saved ? JSON.parse(saved) : null; }
+    catch { return null; }
   });
   const [isGoogleSyncing, setIsGoogleSyncing] = useState(false);
-  const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
-    return localStorage.getItem('ictx_last_sync_time');
-  });
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => localStorage.getItem('ictx_last_sync_time'));
 
   useEffect(() => {
-    if (spreadsheet) {
-      localStorage.setItem('ictx_google_spreadsheet', JSON.stringify(spreadsheet));
-    }
+    if (spreadsheet) localStorage.setItem('ictx_google_spreadsheet', JSON.stringify(spreadsheet));
   }, [spreadsheet]);
-
-  const dirtyCount = useMemo(() => {
-    if (currentUser) return 0;
-    const base = carregarBaseSync();
-    return leads.filter((l) => {
-      if (!l || !l.id || isSampleLeadId(l.id)) return false;
-      return hashLead(l) !== base[l.id];
-    }).length;
-  }, [leads, currentUser]);
 
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
 
-  function calcularPendenciasLocais(): number {
-    const baseRaw = localStorage.getItem('ictx_sync_base');
-    if (!baseRaw) return leads.length;
-    try {
-      const base: Record<string, string> = JSON.parse(baseRaw);
-      let pendentes = 0;
-      leads.forEach((l) => {
-        if (!l || !l.id || isSampleLeadId(l.id)) return;
-        const cnpj = l.cnpj || ('id:' + l.id);
-        if (base[cnpj] !== hashLead(l)) pendentes++;
-      });
-      return pendentes;
-    } catch {
-      return leads.length;
-    }
-  }
-
   async function executarComRetry(fn: () => Promise<void>): Promise<void> {
-    try {
-      await fn();
-      setPendingSyncCount(0);
-    } catch (e: any) {
-      if (e?.message === 'TOKEN_EXPIRADO') {
-        setPendingSyncCount((prev) => prev + 1);
-        console.warn('[sync] token expirado — clique no badge vermelho do Header para reconectar');
-      } else {
-        throw e;
-      }
+    try { await fn(); setPendingSyncCount(0); }
+    catch (e: any) {
+      if (e?.message === 'TOKEN_EXPIRADO') setPendingSyncCount((prev) => prev + 1);
+      else throw e;
     }
   }
-
-  useEffect(() => {
-    if (!isSavingToSheetRef.current && currentUser && spreadsheet?.id) {
-      setPendingSyncCount(calcularPendenciasLocais());
-    }
-  }, [leads, spreadsheet?.id, currentUser]);
 
   const isInitialMountRef = useRef(true);
   const isLoadingFromSheetRef = useRef(false);
@@ -323,25 +197,11 @@ export default function App() {
   const pendingSaveLeadsRef = useRef<Lead[] | null>(null);
 
   useEffect(() => {
-    if (import.meta.env.DEV) {
-      import('./utils/syncMerge').then(({ selfTestMerge }) => {
-        const falhas = selfTestMerge();
-        if (falhas.length > 0) {
-          console.error('[syncMerge selfTest]: Falhas encontradas no merge 3-way:', falhas);
-        } else {
-          console.log('[syncMerge selfTest]: Todos os testes unitários do merge 3-way passaram.');
-        }
-      });
-    }
-  }, []);
-
-  useEffect(() => {
     const unsubscribe = initAuth(
       async (user, token) => {
         setCurrentUser(user);
         setCachedAccessToken(token);
         setIsAuthChecking(false);
-
         if (!firstMergeDoneRef.current && spreadsheet?.id) {
           try {
             setIsGoogleSyncing(true);
@@ -350,10 +210,7 @@ export default function App() {
             const base = carregarBaseSync();
             let listaMerged: Lead[] = [];
             setLeads((locaisAtuais) => {
-              const { merged, conflitos } = mergeLeads3(locaisAtuais, leadsRemotos, base);
-              if (conflitos > 0) {
-                console.info(`[Sync Merge] ${conflitos} conflito(s) resolvido(s) priorizando estado local.`);
-              }
+              const { merged } = mergeLeads3(locaisAtuais, leadsRemotos, base);
               listaMerged = merged;
               return merged;
             });
@@ -365,19 +222,11 @@ export default function App() {
             const agora = new Date().toISOString();
             setLastSyncTime(agora);
             localStorage.setItem('ictx_last_sync_time', agora);
-          } catch (err) {
-            console.warn('Aviso: Falha ao executar o merge inicial da sessão com Google Sheets:', err);
-          } finally {
-            isLoadingFromSheetRef.current = false;
-            setIsGoogleSyncing(false);
-          }
+          } catch (err) { console.warn('Erro merge:', err); }
+          finally { isLoadingFromSheetRef.current = false; setIsGoogleSyncing(false); }
         }
       },
-      () => {
-        setCurrentUser(null);
-        firstMergeDoneRef.current = false;
-        setIsAuthChecking(false);
-      }
+      () => { setCurrentUser(null); firstMergeDoneRef.current = false; setIsAuthChecking(false); }
     );
     return () => unsubscribe();
   }, [spreadsheet?.id]);
@@ -387,194 +236,43 @@ export default function App() {
   const [leadParaDetalhes, setLeadParaDetalhes] = useState<Lead | null>(null);
   const [leadParaCoach, setLeadParaCoach] = useState<Lead | null>(null);
 
-  useEffect(() => {
-    salvarLeads(leads);
-  }, [leads]);
+  useEffect(() => { salvarLeads(leads); }, [leads]);
 
   useEffect(() => {
-    if (isInitialMountRef.current) {
-      isInitialMountRef.current = false;
-      return;
-    }
-
-    if (!firstMergeDoneRef.current) return;
-    if (!currentUser || !spreadsheet?.id) return;
+    if (isInitialMountRef.current) { isInitialMountRef.current = false; return; }
+    if (!firstMergeDoneRef.current || !currentUser || !spreadsheet?.id) return;
     if (isLoadingFromSheetRef.current || isSavingToSheetRef.current) return;
-
     pendingSaveLeadsRef.current = leads;
-
     const timeout = setTimeout(async () => {
       try {
-        if (isLoadingFromSheetRef.current) return;
-        if (!spreadsheet?.id || !pendingSaveLeadsRef.current) return;
-
+        if (isLoadingFromSheetRef.current || !spreadsheet?.id || !pendingSaveLeadsRef.current) return;
         isSavingToSheetRef.current = true;
         setIsGoogleSyncing(true);
         const dadosParaSalvar = pendingSaveLeadsRef.current;
-
         await executarComRetry(async () => {
           const token = await getAccessToken();
           if (!token) throw new Error('TOKEN_EXPIRADO');
           await saveAllLeadsToSheet(spreadsheet.id, dadosParaSalvar, token);
         });
-
         salvarBaseSync(dadosParaSalvar);
         pendingSaveLeadsRef.current = null;
         const agora = new Date().toISOString();
         setLastSyncTime(agora);
         localStorage.setItem('ictx_last_sync_time', agora);
-      } catch (err) {
-        console.warn('Auto-save no Google Sheets falhou:', err);
-      } finally {
-        isSavingToSheetRef.current = false;
-        setIsGoogleSyncing(false);
-      }
+      } catch (err) { console.warn('Auto-save:', err); }
+      finally { isSavingToSheetRef.current = false; setIsGoogleSyncing(false); }
     }, 3000);
-
     return () => clearTimeout(timeout);
   }, [leads, currentUser, spreadsheet?.id]);
 
-  useEffect(() => {
-    const flushPendingSave = async () => {
-      if (!firstMergeDoneRef.current || !pendingSaveLeadsRef.current || !spreadsheet?.id) return;
-      try {
-        const token = await getAccessToken();
-        if (token) {
-          const dadosParaSalvar = pendingSaveLeadsRef.current;
-          pendingSaveLeadsRef.current = null;
-          await saveAllLeadsToSheet(spreadsheet.id, dadosParaSalvar, token);
-          salvarBaseSync(dadosParaSalvar);
-        }
-      } catch (e) {
-        console.warn('Erro ao descarregar save pendente no background:', e);
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        flushPendingSave();
-      }
-    };
-
-    const handlePageHide = () => {
-      flushPendingSave();
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('pagehide', handlePageHide);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('pagehide', handlePageHide);
-    };
-  }, [spreadsheet?.id]);
-
-  useEffect(() => {
-    salvarTemplates(templates);
-  }, [templates]);
-
-  useEffect(() => {
-    setLeads((prev) => {
-      let alterado = false;
-      const migrados = prev.map((l) => {
-        let mudou = false;
-        let novoStatus = l.status;
-        let cadencia = l.cadenciaContatos;
-
-        if (l.dataAbertura && !l.cnpjInicio && l.status !== 'fechado') {
-          mudou = true;
-          l = { ...l, cnpjInicio: l.dataAbertura };
-        }
-
-        if (novoStatus === 'contato_1' || novoStatus === 'contato_2' || novoStatus === 'contato_3') {
-          mudou = true;
-          if (cadencia === undefined) {
-            cadencia = novoStatus === 'contato_1' ? 1 : novoStatus === 'contato_2' ? 2 : 3;
-          }
-          novoStatus = 'em_prospeccao';
-        }
-
-        const produtosAtivos = l.produtosAtivos || {
-          conta: Boolean(l.contaAtivaEm || (l.pixCount ?? 0) >= 3),
-          maquina: Boolean(l.maquinaAtivaEm || (l.maquinaVendas ?? 0) >= 500),
-        };
-
-        if (!l.produtosAtivos) mudou = true;
-
-        if (mudou) {
-          alterado = true;
-          return {
-            ...l,
-            status: novoStatus,
-            cadenciaContatos: (cadencia ?? 0) as 0 | 1 | 2 | 3,
-            produtosAtivos,
-          };
-        }
-        return l;
-      });
-      return alterado ? migrados : prev;
-    });
-  }, []);
-
-  useEffect(() => {
-    const leadsSaneados = leads.map((l) => autocorrigeLead(l));
-    if (JSON.stringify(leadsSaneados) !== JSON.stringify(leads)) {
-      setLeads(leadsSaneados);
-    }
-  }, []);
-
-  useEffect(() => {
-    const MIGRATION_FLAG = 'ictx_migration_ativa_repair_done';
-    if (localStorage.getItem(MIGRATION_FLAG) === 'true') return;
-
-    let alterado = false;
-    const leadsReparados = leads.map((l) => {
-      const patches: Partial<Lead> = {};
-
-      if ((l.pixCount ?? 0) >= 3 && !l.contaAtivaEm) {
-        patches.contaAtivaEm = l.dataAbertura || l.dataFechamento?.slice(0, 10) || new Date().toISOString().slice(0, 10);
-      }
-
-      if ((l.maquinaVendas ?? 0) >= 500 && !l.maquinaAtivaEm) {
-        patches.maquinaAtivaEm = l.dataAbertura || l.dataFechamento?.slice(0, 10) || new Date().toISOString().slice(0, 10);
-      }
-
-      if (Object.keys(patches).length > 0) {
-        alterado = true;
-        return { ...l, ...patches } as Lead;
-      }
-      return l;
-    });
-
-    if (alterado) {
-      setLeads(leadsReparados);
-      console.log('[repair ativacao] leads reparados:', leadsReparados.filter((r, i) => r.contaAtivaEm !== leads[i]?.contaAtivaEm || r.maquinaAtivaEm !== leads[i]?.maquinaAtivaEm).length);
-    }
-    localStorage.setItem(MIGRATION_FLAG, 'true');
-  }, []);
-
-  useEffect(() => {
-    let alterado = false;
-    const leadsBackfillados = leads.map(l => {
-      if (l.status === 'fechado' && !l.dataFechamento) {
-        alterado = true;
-        return {
-          ...l,
-          dataFechamento: l.atualizadoEm || l.dataUltimoContato || new Date().toISOString(),
-        } as Lead;
-      }
-      return l;
-    });
-    if (alterado) setLeads(leadsBackfillados);
-  }, []);
+  useEffect(() => { salvarTemplates(templates); }, [templates]);
 
   const handleBatchEnrich = async () => {
     let filaIds: string[] = [];
     const filaSalva = localStorage.getItem('ictx_enrich_fila');
     
-    if (filaSalva) {
-      filaIds = JSON.parse(filaSalva);
-    } else {
+    if (filaSalva) { filaIds = JSON.parse(filaSalva); }
+    else {
       const leadsParaEnriquecer = leads.filter(l => {
         if (l.status === 'fechado' || l.status === 'descartado') return false;
         const tel1 = limparDigitos(l.telefonePrincipal || '');
@@ -585,28 +283,17 @@ export default function App() {
         return !temCelular || !l.cnaeCodigo || l.razaoSocial === 'Empresa';
       });
 
-      if (leadsParaEnriquecer.length === 0) {
-        alert('Nenhum lead pendente de enriquecimento.');
-        return;
-      }
+      if (leadsParaEnriquecer.length === 0) { alert('Nenhum lead pendente.'); return; }
       
       filaIds = leadsParaEnriquecer.map(l => l.id);
       localStorage.setItem('ictx_enrich_fila', JSON.stringify(filaIds));
       localStorage.setItem('ictx_enrich_total', filaIds.length.toString());
     }
 
-    if (filaIds.length === 0) {
-      alert('Fila de enriquecimento concluída!');
-      localStorage.removeItem('ictx_enrich_fila');
-      localStorage.removeItem('ictx_enrich_total');
-      return;
-    }
+    if (filaIds.length === 0) { localStorage.removeItem('ictx_enrich_fila'); localStorage.removeItem('ictx_enrich_total'); return; }
 
     const totalOriginal = parseInt(localStorage.getItem('ictx_enrich_total') || filaIds.length.toString(), 10);
-    
-    setIsEnriching(true);
-    setEnrichTotal(totalOriginal);
-    setEnrichProgress(totalOriginal - filaIds.length);
+    setIsEnriching(true); setEnrichTotal(totalOriginal); setEnrichProgress(totalOriginal - filaIds.length);
 
     while (filaIds.length > 0) {
       const leadId = filaIds[0];
@@ -660,217 +347,86 @@ export default function App() {
             leadsAtuais[index] = autocorrigeLead(leadAtualizado);
             salvarLeads(leadsAtuais); 
             setLeads([...leadsAtuais]); 
-            
-            if (leadParaDetalhes?.id === leadId) {
-              setLeadParaDetalhes(autocorrigeLead(leadAtualizado));
-            }
+            if (leadParaDetalhes?.id === leadId) setLeadParaDetalhes(autocorrigeLead(leadAtualizado));
           }
-        } catch (error) {
-          console.warn(`Erro ao enriquecer ${lead.cnpj}:`, error);
-        }
+        } catch (error) { console.warn(`Erro: ${lead.cnpj}`, error); }
       }
 
       filaIds.shift();
       localStorage.setItem('ictx_enrich_fila', JSON.stringify(filaIds));
       setEnrichProgress(totalOriginal - filaIds.length);
-
-      if (filaIds.length > 0) {
-        await new Promise(r => setTimeout(r, 20000));
-      }
+      if (filaIds.length > 0) await new Promise(r => setTimeout(r, 20000));
     }
 
     setIsEnriching(false);
     localStorage.removeItem('ictx_enrich_total');
-    alert('Enriquecimento em lote concluído com sucesso!');
+    alert('Enriquecimento concluído!');
   };
 
   useEffect(() => {
     const filaSalva = localStorage.getItem('ictx_enrich_fila');
     if (filaSalva && !isEnriching) {
       const fila = JSON.parse(filaSalva);
-      if (fila.length > 0) {
-        console.log('Retomando enriquecimento da fila salva...');
-        setTimeout(() => handleBatchEnrich(), 1000);
-      }
+      if (fila.length > 0) setTimeout(() => handleBatchEnrich(), 1000);
     }
   }, []);
 
-  const handleUpdateLeadStatus = (
-    leadId: string,
-    novoStatus: LeadStatus,
-    logInfo?: { tipo: 'whatsapp' | 'ligacao'; templateTitulo: string; mensagem: string; observacao?: string }
-  ) => {
+  const handleUpdateLeadStatus = (leadId: string, novoStatus: LeadStatus, logInfo?: any) => {
     setLeads((prevLeads) => {
       const atualizados = prevLeads.map((l) => {
         if (l.id !== leadId) return l;
-
         const leadComCadencia = aplicarMudancaStatusCadencia(l, novoStatus);
-
         let leadAtualizado = leadComCadencia;
-        if (novoStatus === 'fechado' && !leadAtualizado.dataFechamento) {
-          leadAtualizado = {
-            ...leadAtualizado,
-            dataFechamento: new Date().toISOString(),
-          };
-        }
-
+        if (novoStatus === 'fechado' && !leadAtualizado.dataFechamento) leadAtualizado = { ...leadAtualizado, dataFechamento: new Date().toISOString() };
+        
         const historicoAtualizado = [...leadAtualizado.historicoContatos];
         if (logInfo) {
           historicoAtualizado.unshift({
-            id: `log_${Date.now()}`,
-            dataHora: new Date().toISOString(),
-            tipo: logInfo.tipo,
-            templateTitulo: logInfo.templateTitulo,
-            mensagemEnviada: logInfo.mensagem,
-            observacao: logInfo.observacao,
+            id: `log_${Date.now()}`, dataHora: new Date().toISOString(),
+            tipo: logInfo.tipo, templateTitulo: logInfo.templateTitulo,
+            mensagemEnviada: logInfo.mensagem, observacao: logInfo.observacao,
           });
         }
-
-        return {
-          ...leadAtualizado,
-          historicoContatos: historicoAtualizado,
-        };
+        return { ...leadAtualizado, historicoContatos: historicoAtualizado };
       });
-
-      if (logInfo && spreadsheet) {
-        const leadAlvo = prevLeads.find((x) => x.id === leadId);
-        if (leadAlvo) {
-          getAccessToken().then((token) => {
-            if (token && spreadsheet) {
-              appendContactLogToSheet(
-                spreadsheet.id,
-                {
-                  id: `log_${Date.now()}`,
-                  dataHora: new Date().toISOString(),
-                  tipo: logInfo.tipo,
-                  templateTitulo: logInfo.templateTitulo,
-                  mensagemEnviada: logInfo.mensagem,
-                  observacao: logInfo.observacao,
-                },
-                leadAlvo,
-                token
-              ).catch((e) => console.warn('Erro ao registrar log no Sheets:', e));
-            }
-          });
-        }
-      }
-
       return atualizados;
     });
-
-    if (currentUser && spreadsheet?.id && firstMergeDoneRef.current) {
-      executarComRetry(async () => {
-        const token = await getAccessToken();
-        if (!token) throw new Error('TOKEN_EXPIRADO');
-        const leadsAtuais = carregarLeads();
-        await saveAllLeadsToSheet(spreadsheet.id, leadsAtuais, token);
-        salvarBaseSync(leadsAtuais);
-      }).catch((e) => {
-        console.warn('[sync] auto-save pós status falhou:', e);
-      });
-    }
   };
 
-  const registrarAcaoContato = (
-    leadId: string,
-    tipo: 'whatsapp' | 'ligacao',
-    templateTitulo?: string
-  ) => {
+  const registrarAcaoContato = (leadId: string, tipo: 'whatsapp' | 'ligacao', templateTitulo?: string) => {
     const agoraIso = new Date().toISOString();
     setLeads((prevLeads) => {
       const atualizados = prevLeads.map((l) => {
         if (l.id !== leadId) return l;
-
         const novoStatus: LeadStatus = l.status === 'novo' ? 'em_prospeccao' : l.status;
         const proxFollowUp = calcularProximoFollowUp(novoStatus);
-        const novoHistorico = [
-          {
-            id: `contato_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-            dataHora: agoraIso,
-            tipo,
-            templateTitulo: templateTitulo || (tipo === 'whatsapp' ? 'WhatsApp Rápido' : 'Ligação'),
-            observacao: 'Ação via CRM',
-          },
-          ...(l.historicoContatos || []),
-        ];
+        const novoHistorico = [{
+          id: `contato_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          dataHora: agoraIso, tipo, templateTitulo: templateTitulo || (tipo === 'whatsapp' ? 'WhatsApp Rápido' : 'Ligação'),
+          observacao: 'Ação via CRM',
+        }, ...(l.historicoContatos || [])];
 
         return {
-          ...l,
-          status: novoStatus,
-          dataUltimoContato: agoraIso,
-          ultimoContatoEm: agoraIso,
-          proximoFollowUp: proxFollowUp || l.proximoFollowUp,
-          tentativasContato: (l.tentativasContato || 0) + 1,
+          ...l, status: novoStatus, dataUltimoContato: agoraIso, ultimoContatoEm: agoraIso,
+          proximoFollowUp: proxFollowUp || l.proximoFollowUp, tentativasContato: (l.tentativasContato || 0) + 1,
           cadenciaContatos: ((l.cadenciaContatos ?? 0) < 3 ? (l.cadenciaContatos ?? 0) + 1 : 3) as any,
-          atualizadoEm: agoraIso,
-          historicoContatos: novoHistorico,
+          atualizadoEm: agoraIso, historicoContatos: novoHistorico,
         };
       });
-
       salvarLeads(atualizados);
       return atualizados;
     });
-
-    if (leadParaDetalhes?.id === leadId) {
-      setLeadParaDetalhes((prev) => {
-        if (!prev) return null;
-        const novoStatus: LeadStatus = prev.status === 'novo' ? 'em_prospeccao' : prev.status;
-        const proxFollowUp = calcularProximoFollowUp(novoStatus);
-        return {
-          ...prev,
-          status: novoStatus,
-          dataUltimoContato: agoraIso,
-          ultimoContatoEm: agoraIso,
-          proximoFollowUp: proxFollowUp || prev.proximoFollowUp,
-          tentativasContato: (prev.tentativasContato || 0) + 1,
-          cadenciaContatos: ((prev.cadenciaContatos ?? 0) < 3 ? (prev.cadenciaContatos ?? 0) + 1 : 3) as any,
-          atualizadoEm: agoraIso,
-          historicoContatos: [
-            {
-              id: `contato_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-              dataHora: agoraIso,
-              tipo,
-              templateTitulo: templateTitulo || (tipo === 'whatsapp' ? 'WhatsApp Rápido' : 'Ligação'),
-              observacao: 'Ação via CRM',
-            },
-            ...(prev.historicoContatos || []),
-          ],
-        };
-      });
-    }
-
-    if (currentUser && spreadsheet?.id && firstMergeDoneRef.current) {
-      executarComRetry(async () => {
-        const token = await getAccessToken();
-        if (!token) throw new Error('TOKEN_EXPIRADO');
-        const leadsAtuais = carregarLeads();
-        await saveAllLeadsToSheet(spreadsheet.id, leadsAtuais, token);
-        salvarBaseSync(leadsAtuais);
-      }).catch((e) => {
-        console.warn('[sync] auto-save pós registrarAcaoContato falhou:', e);
-      });
-    }
   };
 
   useEffect(() => {
     const handleCustomAcaoContato = (e: Event) => {
-      const customEvent = e as CustomEvent<{
-        leadId: string;
-        tipo: 'whatsapp' | 'ligacao';
-        templateTitulo?: string;
-      }>;
+      const customEvent = e as CustomEvent<{ leadId: string; tipo: 'whatsapp' | 'ligacao'; templateTitulo?: string; }>;
       if (customEvent.detail?.leadId) {
-        registrarAcaoContato(
-          customEvent.detail.leadId,
-          customEvent.detail.tipo || 'whatsapp',
-          customEvent.detail.templateTitulo
-        );
+        registrarAcaoContato(customEvent.detail.leadId, customEvent.detail.tipo || 'whatsapp', customEvent.detail.templateTitulo);
       }
     };
     window.addEventListener('ictx:registrarAcaoContato', handleCustomAcaoContato);
-    return () => {
-      window.removeEventListener('ictx:registrarAcaoContato', handleCustomAcaoContato);
-    };
+    return () => window.removeEventListener('ictx:registrarAcaoContato', handleCustomAcaoContato);
   }, [currentUser, spreadsheet?.id]);
 
   const handleConnectGoogle = async () => {
@@ -878,126 +434,56 @@ export default function App() {
     isLoadingFromSheetRef.current = true;
     try {
       const authResult = await googleSignIn();
-      if (!authResult) throw new Error('Não foi possível obter credenciais do Google.');
-
+      if (!authResult) throw new Error('Sem credenciais');
       setCurrentUser(authResult.user);
-
       const sheetInfo = await findOrCreateSpreadsheet(authResult.accessToken);
       setSpreadsheet(sheetInfo);
-
       const leadsDaPlanilha = await fetchLeadsFromSheet(sheetInfo.id, authResult.accessToken);
       const base = carregarBaseSync();
       let listaMerged: Lead[] = [];
       setLeads((locaisAtuais) => {
-        const { merged, conflitos } = mergeLeads3(locaisAtuais, leadsDaPlanilha, base);
-        if (conflitos > 0) {
-          console.info(`[Sync Merge] ${conflitos} conflito(s) resolvido(s) favorecendo versão local.`);
-        }
+        const { merged } = mergeLeads3(locaisAtuais, leadsDaPlanilha, base);
         listaMerged = merged;
         return merged;
       });
-
       if (listaMerged.length > 0) {
-        await executarComRetry(async () => {
-          await saveAllLeadsToSheet(sheetInfo.id, listaMerged, authResult.accessToken);
-        });
+        await saveAllLeadsToSheet(sheetInfo.id, listaMerged, authResult.accessToken);
         salvarBaseSync(listaMerged);
       }
       firstMergeDoneRef.current = true;
-
       const agora = new Date().toISOString();
       setLastSyncTime(agora);
       localStorage.setItem('ictx_last_sync_time', agora);
-    } catch (err: any) {
-      console.error('Erro ao conectar Google Sheets:', err);
-      throw err;
-    } finally {
-      isLoadingFromSheetRef.current = false;
-      setIsGoogleSyncing(false);
-    }
+    } catch (err: any) { console.error('Erro Google:', err); throw err; }
+    finally { isLoadingFromSheetRef.current = false; setIsGoogleSyncing(false); }
   };
 
   const handleSyncToSheet = async () => {
     setIsGoogleSyncing(true);
     try {
       let token = await getAccessToken();
-      if (!token) {
-        const authResult = await googleSignIn();
-        if (!authResult) return;
-        token = authResult.accessToken;
-        setCurrentUser(authResult.user);
-      }
-
-      let targetSheetId = spreadsheet?.id;
-      if (!spreadsheet) {
-        const sheetInfo = await findOrCreateSpreadsheet(token);
-        setSpreadsheet(sheetInfo);
-        targetSheetId = sheetInfo.id;
-      }
-
-      if (targetSheetId) {
-        await executarComRetry(async () => {
-          const currentToken = (await getAccessToken()) || token;
-          if (!currentToken) throw new Error('TOKEN_EXPIRADO');
-          await saveAllLeadsToSheet(targetSheetId, leads, currentToken);
-        });
-        salvarBaseSync(leads);
-        firstMergeDoneRef.current = true;
-      }
-
-      const agora = new Date().toISOString();
-      setLastSyncTime(agora);
-      localStorage.setItem('ictx_last_sync_time', agora);
-    } finally {
-      setIsGoogleSyncing(false);
-    }
+      if (!token) { const r = await googleSignIn(); if (!r) return; token = r.accessToken; setCurrentUser(r.user); }
+      if (!spreadsheet) { const s = await findOrCreateSpreadsheet(token); setSpreadsheet(s); }
+      if (spreadsheet?.id) { await saveAllLeadsToSheet(spreadsheet.id, leads, token); salvarBaseSync(leads); }
+    } finally { setIsGoogleSyncing(false); }
   };
 
   const handleFetchFromSheet = async () => {
     setIsGoogleSyncing(true);
-    isLoadingFromSheetRef.current = true;
     try {
       let token = await getAccessToken();
-      if (!token) {
-        const authResult = await googleSignIn();
-        if (!authResult) return;
-        token = authResult.accessToken;
-        setCurrentUser(authResult.user);
-      }
-
-      const sheetId = spreadsheet?.id;
-      if (!sheetId) throw new Error('Nenhuma planilha conectada.');
-
-      await executarComRetry(async () => {
-        const currentToken = (await getAccessToken()) || token;
-        if (!currentToken) throw new Error('TOKEN_EXPIRADO');
-        const leadsDaPlanilha = await fetchLeadsFromSheet(sheetId, currentToken);
-        const base = carregarBaseSync();
-        let listaMerged: Lead[] = [];
-        setLeads((locaisAtuais) => {
-          const { merged, conflitos } = mergeLeads3(locaisAtuais, leadsDaPlanilha, base);
-          if (conflitos > 0) {
-            console.info(`[Sync Merge] ${conflitos} conflito(s) resolvido(s) favorecendo versão local.`);
-          }
-          listaMerged = merged;
-          return merged;
-        });
-
-        if (listaMerged.length > 0) {
-          await saveAllLeadsToSheet(sheetId, listaMerged, currentToken);
-          salvarBaseSync(listaMerged);
-        }
+      if (!token) { const r = await googleSignIn(); if (!r) return; token = r.accessToken; }
+      if (!spreadsheet?.id) return;
+      const leadsDaPlanilha = await fetchLeadsFromSheet(spreadsheet.id, token);
+      const base = carregarBaseSync();
+      let merged: Lead[] = [];
+      setLeads((locais) => {
+        const res = mergeLeads3(locais, leadsDaPlanilha, base);
+        merged = res.merged;
+        return res.merged;
       });
-
-      firstMergeDoneRef.current = true;
-
-      const agora = new Date().toISOString();
-      setLastSyncTime(agora);
-      localStorage.setItem('ictx_last_sync_time', agora);
-    } finally {
-      isLoadingFromSheetRef.current = false;
-      setIsGoogleSyncing(false);
-    }
+      if (merged.length > 0) { await saveAllLeadsToSheet(spreadsheet.id, merged, token); salvarBaseSync(merged); }
+    } finally { setIsGoogleSyncing(false); }
   };
 
   const handleDisconnectGoogle = async () => {
@@ -1010,15 +496,7 @@ export default function App() {
   const handleUpdateLead = (leadAtualizado: Lead) => {
     const corrigido = autocorrigeLead(leadAtualizado);
     setLeads((prev) => prev.map((l) => (l.id === corrigido.id ? corrigido : l)));
-    if (leadParaDetalhes?.id === corrigido.id) {
-      setLeadParaDetalhes(corrigido);
-    }
-  };
-
-  const handleOpenAtivacao = (lead: Lead) => {
-    setLeadParaMensagem(null);
-    setLeadParaLigacao(null);
-    setSelectedClient(normalizarParaClient(lead));
+    if (leadParaDetalhes?.id === corrigido.id) setLeadParaDetalhes(corrigido);
   };
 
   const handleOpenDetails = (lead: Lead) => {
@@ -1028,157 +506,27 @@ export default function App() {
   };
 
   const handleSaveNotas = (leadId: string, notas: string) => {
-    setLeads((prev) =>
-      prev.map((l) => (l.id === leadId ? { ...l, notas, atualizadoEm: new Date().toISOString() } : l))
-    );
+    setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, notas, atualizadoEm: new Date().toISOString() } : l)));
   };
 
-  const handleSaveCoachEvaluation = (
-    leadId: string,
-    avaliacao: { nota: number; feedback: string; data: string }
-  ) => {
-    setLeads((prevLeads) => {
-      return prevLeads.map((l) => {
-        if (l.id !== leadId) return l;
-
-        const novoHistorico = [
-          { data: avaliacao.data, nota: avaliacao.nota, feedback: avaliacao.feedback },
-          ...(l.historicoCoach || []),
-        ];
-
-        const atualizado: Lead = {
-          ...l,
-          coachNota: avaliacao.nota,
-          coachFeedback: avaliacao.feedback,
-          coachData: avaliacao.data,
-          historicoCoach: novoHistorico,
-          atualizadoEm: avaliacao.data,
-        };
-
-        if (leadParaDetalhes?.id === leadId) {
-          setLeadParaDetalhes(atualizado);
-        }
-        if (leadParaCoach?.id === leadId) {
-          setLeadParaCoach(atualizado);
-        }
-
-        return atualizado;
-      });
-    });
+  const handleSaveCoachEvaluation = (leadId: string, av: { nota: number; feedback: string; data: string }) => {
+    setLeads((prev) => prev.map((l) => {
+      if (l.id !== leadId) return l;
+      return { ...l, coachNota: av.nota, coachFeedback: av.feedback, coachData: av.data,
+        historicoCoach: [{ data: av.data, nota: av.nota, feedback: av.feedback }, ...(l.historicoCoach || [])],
+        atualizadoEm: av.data };
+    }));
   };
 
-  const handleDeleteLead = (leadId: string) => {
-    setLeads((prev) => prev.filter((l) => l.id !== leadId));
-    if (leadParaDetalhes?.id === leadId) setLeadParaDetalhes(null);
-  };
-
-  const handleImportLeads = (novosLeads: Lead[]) => {
-    const leadsSaneados = novosLeads
-      .filter((l) => l && l.id && !isSampleLeadId(l.id))
-      .map((l) => autocorrigeLead(l));
-    setLeads((prev) => [...leadsSaneados, ...prev]);
-  };
-
-  const handleAddSingleLead = (novoLead: Lead) => {
-    if (novoLead && isSampleLeadId(novoLead.id)) return;
-    setLeads((prev) => [autocorrigeLead(novoLead), ...prev]);
-  };
-
-  const handleImportarLeadsMinerados = (leadsRecebidos: any[]) => {
-    if (!leadsRecebidos || leadsRecebidos.length === 0) return;
-
-    const cnpjsExistentes = new Set(leads.map((l) => l.cnpj));
-    const novosFormatados: Lead[] = [];
-    let duplicadosCount = 0;
-
-    for (const raw of leadsRecebidos) {
-      const cnpjLimpo = limparCnpj(raw.cnpj || raw.CNPJ || '');
-      if (!cnpjLimpo || cnpjLimpo.length !== 14) continue;
-
-      if (cnpjsExistentes.has(cnpjLimpo)) {
-        duplicadosCount++;
-        continue;
-      }
-
-      cnpjsExistentes.add(cnpjLimpo);
-
-      const telPrincipal = limparDigitos(raw.telefone || raw.telefonePrincipal || raw.celular || '');
-      const telSecundario = limparDigitos(raw.telefoneSecundario || '');
-      const agora = new Date().toISOString();
-
-      const razao = (raw.razaoSocial || raw.razao_social || raw.nome || raw.empresa || '').trim();
-      const fantasia = (raw.nomeFantasia || raw.nome_fantasia || '').trim();
-      const nomeContato = (raw.nomeContato || raw.contato || raw.nome || '').trim() || 'Contato';
-
-      const novoLead: Lead = {
-        id: `lead_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        cnpj: cnpjLimpo,
-        cnpjFormatado: formatarCnpj(cnpjLimpo),
-        nomeContato: formatarNome(nomeContato),
-        telefonePrincipal: telPrincipal,
-        telefonePrincipalFormatado: formatarTelefone(telPrincipal),
-        telefoneSecundario: telSecundario || undefined,
-        telefoneSecundarioFormatado: telSecundario ? formatarTelefone(telSecundario) : undefined,
-        razaoSocial: formatarNome(razao || 'Empresa'),
-        nomeFantasia: formatarNome(fantasia),
-        empresaExibicao: formatarNome(fantasia || razao || 'Empresa'),
-        empresaParaMensagem: formatarNome(fantasia || 'sua empresa'),
-        municipio: raw.municipio || raw.cidade || '',
-        bairro: raw.bairro || '',
-        cnaeCodigo: raw.cnaeCodigo ? String(raw.cnaeCodigo) : undefined,
-        cnaeDescricao: raw.cnaeDescricao || raw.cnae || '',
-        socios: raw.socios || [],
-        status: 'em_prospeccao',
-        parceiroSantander: {
-          status: 'apto',
-          verificadoEm: agora,
-        },
-        produtoSugerido: '💳 Conta PJ Isenta & Cartão',
-        criadoEm: agora,
-        atualizadoEm: agora,
-        historicoContatos: [],
-        cadenciaContatos: 0,
-        produtosAtivos: {
-          conta: false,
-          maquina: false,
-        },
-      };
-
-      novosFormatados.push(autocorrigeLead(novoLead));
-    }
-
-    if (novosFormatados.length === 0) {
-      alert(`Todos os ${leadsRecebidos.length} leads já constam na base do CRM (duplicatas evitadas).`);
-      return;
-    }
-
-    setLeads((prev) => [...novosFormatados, ...prev]);
-    setIsMiningOpen(false);
-
-    const msg = duplicadosCount > 0
-      ? `Sucesso: ${novosFormatados.length} lead(s) adicionados diretamente em "Em Prospecção" com tag Apto! (${duplicadosCount} duplicado(s) ignorado(s))`
-      : `Sucesso: ${novosFormatados.length} lead(s) adicionados diretamente em "Em Prospecção" com tag Apto!`;
-
-    alert(msg);
-  };
-
-  const handleSaveTemplates = (novosTemplates: MessageTemplate[]) => {
-    setTemplates(novosTemplates);
-  };
-
-  const handleRestoreBackup = (backupLeads: Lead[], backupTemplates: MessageTemplate[]) => {
-    const leadsSaneados = backupLeads
-      .filter((l) => l && l.id && !isSampleLeadId(l.id))
-      .map((l) => autocorrigeLead(l));
-    
-    if (leadsSaneados.length > 0) {
-      salvarLeads(leadsSaneados);
-    }
-    if (backupTemplates && backupTemplates.length > 0) {
-      salvarTemplates(backupTemplates);
-    }
-    setLeads(leadsSaneados);
-    setTemplates(backupTemplates);
+  const handleDeleteLead = (leadId: string) => setLeads((prev) => prev.filter((l) => l.id !== leadId));
+  const handleImportLeads = (novos: Lead[]) => setLeads((prev) => [...novos.filter(l => l && l.id && !isSampleLeadId(l.id)).map(autocorrigeLead), ...prev]);
+  const handleAddSingleLead = (n: Lead) => { if (!isSampleLeadId(n.id)) setLeads((prev) => [autocorrigeLead(n), ...prev]); };
+  const handleSaveTemplates = (t: MessageTemplate[]) => setTemplates(t);
+  const handleRestoreBackup = (bl: Lead[], bt: MessageTemplate[]) => {
+    const saneados = bl.filter((l) => l && l.id && !isSampleLeadId(l.id)).map(autocorrigeLead);
+    if (saneados.length > 0) salvarLeads(saneados);
+    if (bt?.length > 0) salvarTemplates(bt);
+    setLeads(saneados); setTemplates(bt);
   };
 
   const existingCnpjs = new Set(leads.map((l) => l.cnpj));
@@ -1198,71 +546,19 @@ export default function App() {
   return (
     <div className="min-h-[100dvh] bg-slate-100 flex flex-col text-slate-800 pb-16 md:pb-0">
       
+      {/* AQUI ESTÁ A CORREÇÃO: Passando a função para o Header */}
       <Header
         leads={leads}
-        onOpenBulkImport={() => setIsBulkImportOpen(true)}
-        onExportCsv={() => exportarLeadsCsv(leads)}
-        onOpenInstallModal={() => setIsInstallOpen(true)}
-        onOpenGoogleSheets={() => setIsGoogleModalOpen(true)}
-        isGoogleConnected={Boolean(currentUser && spreadsheet)}
+        onOpenProfile={() => setIsProfileOpen(true)}
       />
 
       <main className="flex-1 max-w-7xl lg:max-w-none w-full mx-auto p-1 space-y-3 sm:space-y-4">
-        
-        <div className="hidden md:block bg-gradient-to-r from-red-700 via-red-800 to-slate-900 rounded-2xl p-2.5 sm:p-4 text-white shadow-xs space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-              <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300 shrink-0" />
-              <h2 className="text-xs sm:text-sm font-bold tracking-tight truncate">
-                iCtx · Fluxo Comercial de Alta Conversão
-              </h2>
-            </div>
-
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              <button
-                onClick={() => setIsGoogleModalOpen(true)}
-                className={`relative w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-xl shadow-xs transition-colors cursor-pointer shrink-0 ${
-                  currentUser && spreadsheet
-                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                    : 'bg-emerald-950/70 hover:bg-emerald-900 text-emerald-200 border border-emerald-600/70'
-                }`}
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                {currentUser && spreadsheet && (
-                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-300 animate-pulse" />
-                )}
-              </button>
-
-              <button
-                onClick={() => setIsInstallOpen(true)}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-red-600 hover:bg-red-500 text-white rounded-xl shadow-xs transition-colors cursor-pointer shrink-0"
-              >
-                <Smartphone className="w-4 h-4" />
-              </button>
-
-              <button
-                onClick={() => setIsExportOpen(true)}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded-xl backdrop-blur-xs transition-colors cursor-pointer shrink-0"
-              >
-                <Database className="w-4 h-4" />
-              </button>
-
-              <button
-                onClick={() => setIsBulkImportOpen(true)}
-                className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-white text-red-800 hover:bg-red-50 rounded-xl shadow-xs transition-colors cursor-pointer shrink-0"
-              >
-                <ClipboardPaste className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-
         <PipelineKanban
           leads={leads}
           onOpenMessageComposer={(lead) => setLeadParaMensagem(autocorrigeLead(lead))}
           onOpenCallScript={(lead) => setLeadParaLigacao(autocorrigeLead(lead))}
           onOpenDetails={handleOpenDetails}
-          onOpenAtivacao={handleOpenAtivacao}
+          onOpenAtivacao={() => {}}
           onUpdateStatus={handleUpdateLeadStatus}
           onDeleteLead={handleDeleteLead}
           onRegistrarAcaoContato={registrarAcaoContato}
@@ -1275,7 +571,6 @@ export default function App() {
           modoVisualizacao={modoVisualizacao}
           onToggleVisualizacao={handleToggleVisualizacao}
         />
-
       </main>
 
       <MobileNav
@@ -1297,191 +592,27 @@ export default function App() {
         />
       )}
 
-      {leadParaMensagem && (
-        <MessageComposerModal
-          lead={leadParaMensagem}
-          templates={templates}
-          isOpen={true}
-          onClose={() => setLeadParaMensagem(null)}
-          onUpdateLeadStatus={handleUpdateLeadStatus}
-          onOpenDetails={(lead) => setLeadParaDetalhes(autocorrigeLead(lead))}
-        />
-      )}
-
-      {leadParaLigacao && (
-        <CallScriptModal
-          lead={leadParaLigacao}
-          templates={templates}
-          isOpen={true}
-          onClose={() => setLeadParaLigacao(null)}
-          onUpdateLeadStatus={handleUpdateLeadStatus}
-          onOpenDetails={(lead) => setLeadParaDetalhes(autocorrigeLead(lead))}
-        />
-      )}
-
-      {leadParaDetalhes && (
-        <LeadDetailDrawer
-          lead={leadParaDetalhes}
-          isOpen={true}
-          onClose={() => setLeadParaDetalhes(null)}
-          onUpdateStatus={handleUpdateLeadStatus}
-          onUpdateLead={handleUpdateLead}
-          onSaveNotas={handleSaveNotas}
-          onRegistrarAcaoContato={registrarAcaoContato}
-          onOpenMessageComposer={(lead) => {
-            setLeadParaDetalhes(null);
-            setLeadParaMensagem(autocorrigeLead(lead));
-          }}
-          onOpenCallScript={(lead) => {
-            setLeadParaDetalhes(null);
-            setLeadParaLigacao(autocorrigeLead(lead));
-          }}
-          onOpenCoach={(lead) => {
-            setLeadParaCoach(autocorrigeLead(lead));
-          }}
-        />
-      )}
-
-      {isBulkImportOpen && (
-        <BulkImportModal
-          isOpen={true}
-          onClose={() => setIsBulkImportOpen(false)}
-          existingLeads={leads}
-          onImportLeads={handleImportLeads}
-        />
-      )}
-
-      {isSingleLeadOpen && (
-        <SingleLeadModal
-          isOpen={true}
-          onClose={() => setIsSingleLeadOpen(false)}
-          onAddLead={handleAddSingleLead}
-          existingCnpjs={existingCnpjs}
-        />
-      )}
-
-      {isTemplatesOpen && (
-        <TemplateManagerModal
-          templates={templates}
-          isOpen={true}
-          onClose={() => setIsTemplatesOpen(false)}
-          onSaveTemplates={handleSaveTemplates}
-        />
-      )}
-
-      {isExportOpen && (
-        <ExportImportModal
-          isOpen={true}
-          onClose={() => setIsExportOpen(false)}
-          leads={leads}
-          templates={templates}
-          onRestoreBackup={handleRestoreBackup}
-        />
-      )}
-
-      {isInstallOpen && (
-        <InstallAppModal
-          isOpen={true}
-          onClose={() => setIsInstallOpen(false)}
-        />
-      )}
-
-      {isGoogleModalOpen && (
-        <GoogleSheetsSyncModal
-          isOpen={true}
-          onClose={() => setIsGoogleModalOpen(false)}
-          user={currentUser}
-          spreadsheet={spreadsheet}
-          isLoading={isGoogleSyncing}
-          lastSyncTime={lastSyncTime}
-          totalLeads={leads.length}
-          onConnectGoogle={handleConnectGoogle}
-          onSyncToSheet={handleSyncToSheet}
-          onFetchFromSheet={handleFetchFromSheet}
-          onDisconnect={handleDisconnectGoogle}
-        />
-      )}
-
-      <BatchMessageModal
-        isOpen={isBatchModalOpen}
-        onClose={() => setIsBatchModalOpen(false)}
-        leadsFiltrados={leadsFiltrados}
-        templates={templates}
-        onUpdateStatus={handleUpdateLeadStatus}
-      />
-
-      {leadParaCoach && (
-        <CoachModal
-          isOpen={true}
-          onClose={() => setLeadParaCoach(null)}
-          lead={leadParaCoach}
-          onSaveCoachEvaluation={handleSaveCoachEvaluation}
-        />
-      )}
-
-      <SupervisorDashboard
-        isOpen={isSupervisorOpen}
-        onClose={() => setIsSupervisorOpen(false)}
-        leadsEquipe={leadsEquipe}
-        usuarioAtivo={usuarioAtivo}
-        onAlternarRole={(role) => setUsuarioAtivo((prev) => ({ ...prev, role }))}
-      />
-
-      <NotificationModal
-        isOpen={isNotificationModalOpen}
-        onClose={() => setIsNotificationModalOpen(false)}
-        permissionStatus={notificationPermission}
-        onPermissionChange={(status) => setNotificationPermission(status)}
-        leads={leads}
-        onSelectLead={(lead) => setLeadParaDetalhes(lead)}
-      />
-
-      {isMetasOpen && (
-        <MetasDashboard
-          isOpen={true}
-          onClose={() => {
-            setIsMetasOpen(false);
-            setMobileTab('leads');
-          }}
-          leads={leads}
-        />
-      )}
-
-      {!isMiningOpen &&
-        (miningStatus.status === 'rodando' ||
-          miningStatus.status === 'aguardando' ||
-          miningStatus.processando > 0) && (
-          <MiningFloatingWidget
-            status={miningStatus}
-            onReopen={() => setIsMiningOpen(true)}
-          />
-        )}
-
-      {isMiningOpen && (
-        <MiningDashboard
-          isOpen={isMiningOpen}
-          onClose={() => setIsMiningOpen(false)}
-          onMinimize={() => setIsMiningOpen(false)}
-          miningStatus={miningStatus}
-          onImportLeads={handleImportarLeadsMinerados}
-          existingCnpjs={existingCnpjs}
-        />
-      )}
-
-      <CartuchosModal 
-        isOpen={isCartuchosOpen} 
-        onClose={() => {
-          setIsCartuchosOpen(false);
-          setMobileTab('leads');
-        }} 
-      />
+      {leadParaMensagem && <MessageComposerModal lead={leadParaMensagem} templates={templates} isOpen={true} onClose={() => setLeadParaMensagem(null)} onUpdateLeadStatus={handleUpdateLeadStatus} onOpenDetails={(lead) => setLeadParaDetalhes(autocorrigeLead(lead))} />}
+      {leadParaLigacao && <CallScriptModal lead={leadParaLigacao} templates={templates} isOpen={true} onClose={() => setLeadParaLigacao(null)} onUpdateLeadStatus={handleUpdateLeadStatus} onOpenDetails={(lead) => setLeadParaDetalhes(autocorrigeLead(lead))} />}
+      {leadParaDetalhes && <LeadDetailDrawer lead={leadParaDetalhes} isOpen={true} onClose={() => setLeadParaDetalhes(null)} onUpdateStatus={handleUpdateLeadStatus} onUpdateLead={handleUpdateLead} onSaveNotas={handleSaveNotas} onRegistrarAcaoContato={registrarAcaoContato} onOpenMessageComposer={(lead) => { setLeadParaDetalhes(null); setLeadParaMensagem(autocorrigeLead(lead)); }} onOpenCallScript={(lead) => { setLeadParaDetalhes(null); setLeadParaLigacao(autocorrigeLead(lead)); }} onOpenCoach={(lead) => setLeadParaCoach(autocorrigeLead(lead))} />}
+      {isBulkImportOpen && <BulkImportModal isOpen={true} onClose={() => setIsBulkImportOpen(false)} existingLeads={leads} onImportLeads={handleImportLeads} />}
+      {isSingleLeadOpen && <SingleLeadModal isOpen={true} onClose={() => setIsSingleLeadOpen(false)} onAddLead={handleAddSingleLead} existingCnpjs={existingCnpjs} />}
+      {isTemplatesOpen && <TemplateManagerModal templates={templates} isOpen={true} onClose={() => setIsTemplatesOpen(false)} onSaveTemplates={handleSaveTemplates} />}
+      {isExportOpen && <ExportImportModal isOpen={true} onClose={() => setIsExportOpen(false)} leads={leads} templates={templates} onRestoreBackup={handleRestoreBackup} />}
+      {isInstallOpen && <InstallAppModal isOpen={true} onClose={() => setIsInstallOpen(false)} />}
+      {isGoogleModalOpen && <GoogleSheetsSyncModal isOpen={true} onClose={() => setIsGoogleModalOpen(false)} user={currentUser} spreadsheet={spreadsheet} isLoading={isGoogleSyncing} lastSyncTime={lastSyncTime} totalLeads={leads.length} onConnectGoogle={handleConnectGoogle} onSyncToSheet={handleSyncToSheet} onFetchFromSheet={handleFetchFromSheet} onDisconnect={handleDisconnectGoogle} />}
+      <BatchMessageModal isOpen={isBatchModalOpen} onClose={() => setIsBatchModalOpen(false)} leadsFiltrados={leadsFiltrados} templates={templates} onUpdateStatus={handleUpdateLeadStatus} />
+      {leadParaCoach && <CoachModal isOpen={true} onClose={() => setLeadParaCoach(null)} lead={leadParaCoach} onSaveCoachEvaluation={handleSaveCoachEvaluation} />}
+      <SupervisorDashboard isOpen={isSupervisorOpen} onClose={() => setIsSupervisorOpen(false)} leadsEquipe={leadsEquipe} usuarioAtivo={usuarioAtivo} onAlternarRole={(role) => setUsuarioAtivo((prev) => ({ ...prev, role }))} />
+      <NotificationModal isOpen={isNotificationModalOpen} onClose={() => setIsNotificationModalOpen(false)} permissionStatus={notificationPermission} onPermissionChange={(status) => setNotificationPermission(status)} leads={leads} onSelectLead={(lead) => setLeadParaDetalhes(lead)} />
+      {isMetasOpen && <MetasDashboard isOpen={true} onClose={() => { setIsMetasOpen(false); setMobileTab('leads'); }} leads={leads} />}
+      {!isMiningOpen && (miningStatus.status === 'rodando' || miningStatus.status === 'aguardando' || miningStatus.processando > 0) && <MiningFloatingWidget status={miningStatus} onReopen={() => setIsMiningOpen(true)} />}
+      {isMiningOpen && <MiningDashboard isOpen={isMiningOpen} onClose={() => setIsMiningOpen(false)} onMinimize={() => setIsMiningOpen(false)} miningStatus={miningStatus} onImportLeads={handleImportLeads} existingCnpjs={existingCnpjs} />}
+      <CartuchosModal isOpen={isCartuchosOpen} onClose={() => { setIsCartuchosOpen(false); setMobileTab('leads'); }} />
 
       <ProfileModal
         isOpen={isProfileOpen}
-        onClose={() => {
-          setIsProfileOpen(false);
-          setMobileTab('leads');
-        }}
+        onClose={() => { setIsProfileOpen(false); setMobileTab('leads'); }}
         user={currentUser}
         onLogout={handleDisconnectGoogle}
         isSyncing={isGoogleSyncing}
@@ -1500,6 +631,8 @@ export default function App() {
         onOpenSupervisor={() => { setIsProfileOpen(false); setIsSupervisorOpen(true); }}
         onOpenNotifications={() => { setIsProfileOpen(false); setIsNotificationModalOpen(true); }}
         onOpenCartuchos={() => { setIsProfileOpen(false); setIsCartuchosOpen(true); }}
+        modoVisualizacao={modoVisualizacao}
+        onToggleVisualizacao={handleToggleVisualizacao}
       />
 
     </div>
