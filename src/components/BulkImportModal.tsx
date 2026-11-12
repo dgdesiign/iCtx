@@ -24,7 +24,7 @@ interface ParsedRow {
   isMeiDetectado?: boolean;
   valido: boolean;
   duplicado: boolean;
-  simDisponivel?: boolean; // NOVO
+  simDisponivel?: boolean;
 }
 
 export const BulkImportModal: React.FC<BulkImportModalProps> = ({
@@ -50,10 +50,7 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
       const trimmed = linha.trim();
       if (!trimmed) continue;
 
-      // Verifica se a linha contém "sim disponível"
       const simDisponivel = trimmed.toLowerCase().includes('sim disponível') || trimmed.toLowerCase().includes('sim disponivel');
-      
-      // Remove a palavra "sim disponível" para não sujar o nome ou tokens
       const linhaLimpa = trimmed.replace(/sim disponível/gi, '').replace(/sim disponivel/gi, '').trim();
 
       const extraido = extrairTokensInteligente(linhaLimpa);
@@ -120,7 +117,6 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
       let dadosApi = null;
       try { dadosApi = await consultarCnpj(linha.cnpjLimpo); } catch (err) {}
 
-      // Prioriza WhatsApp
       if (dadosApi) {
         const tel1 = dadosApi.ddd_telefone_1 || '';
         const tel2 = dadosApi.ddd_telefone_2 || '';
@@ -140,7 +136,6 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
 
       const lead = construirLead(linha.telefoneBruto, linha.nomeBruto, linha.cnpjLimpo, dadosApi, linha.telefoneSecundarioBruto);
       
-      // Se foi marcado como Sim Disponível, aplica a tag verde
       if (linha.simDisponivel) {
         lead.parceiroSantander = { status: 'apto', verificadoEm: new Date().toISOString() };
       }
@@ -174,7 +169,6 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({
     setEtapa('concluido');
   };
 
-  // ... O restante do JSX de renderização do modal é o mesmo da versão anterior ...
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
