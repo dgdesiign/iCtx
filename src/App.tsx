@@ -209,7 +209,6 @@ export default function App() {
         if (token) setCachedAccessToken(token);
         setIsAuthChecking(false);
         
-        // A CORREÇÃO ESTÁ AQUI: Só faz o merge se tivermos um token válido
         if (token && !firstMergeDoneRef.current && spreadsheet?.id) {
           try {
             setIsGoogleSyncing(true);
@@ -245,6 +244,79 @@ export default function App() {
   const [leadParaCoach, setLeadParaCoach] = useState<Lead | null>(null);
 
   useEffect(() => { salvarLeads(leads); }, [leads]);
+
+  // =========================================================================
+  // 🧹 O FAXINEIRO DE DADOS (Roda apenas 1 vez no primeiro carregamento)
+  // =========================================================================
+  useEffect(() => {
+    const MIGRATION_FLAG = 'ictx_migration_janitor_v1';
+    if (localStorage.getItem(MIGRATION_FLAG) === 'true') return;
+
+    let alterado = false;
+    
+    const leadsLimpos = leads.map((lead) => {
+      let mudou = false;
+      const leadAtualizado = { ...lead };
+      const nomesInvalidos = ['sim sucesso', 'sim', 'sucesso', 'não cnpj invalido', 'nao cnpj invalido', 'não', 'nao'];
+
+      // 1. Consertar Nomes
+      if (leadAtualizado.nomeContato && nomesInvalidos.includes(leadAtualizado.nomeContato.toLowerCase().trim())) {
+        leadAtualizado.nomeContato = 'Consultar Receita';
+        mudou = true;
+      }
+      if (leadAtualizado.empresaExibicao && nomesInvalidos.includes(leadAtualizado.empresaExibicao.toLowerCase().trim())) {
+        leadAtualizado.empresaExibicao = 'Empresa';
+        mudou = true;
+      }
+
+      // 2. Consertar Telefones
+      const limparTelefone = (tel: string | undefined): string => {
+        if (!tel) return '';
+        const limpo = tel.replace(/\D/g, '');
+        if (limpo.length > 11) {
+          const match = limpo.match(/(\d{2}9?\d{8})/);
+          return match ? match[1] : limpo.slice(0, 11);
+        }
+        return limpo;
+      };
+
+      const novoTelPrincipal = limparTelefone(leadAtualizado.telefonePrincipal);
+      if (novoTelPrincipal !== leadAtualizado.telefonePrincipal) {
+        leadAtualizado.telefonePrincipal = novoTelPrincipal;
+        leadAtualizado.telefonePrincipalFormatado = formatarTelefone(novoTelPrincipal);
+        mudou = true;
+      }
+
+      const novoTelSecundario = limparTelefone(leadAtualizado.telefoneSecundario);
+      if (novoTelSecundario !== leadAtualizado.telefoneSecundario) {
+        leadAtualizado.telefoneSecundario = novoTelSecundario || undefined;
+        leadAtualizado.telefoneSecundarioFormatado = novoTelSecundario ? formatarTelefone(novoTelSecundario) : undefined;
+        mudou = true;
+      }
+
+      // 3. Consertar Follow-up corrompido
+      if (leadAtualizado.proximoFollowUp && leadAtualizado.proximoFollowUp.trim() === '') {
+        leadAtualizado.proximoFollowUp = undefined;
+        mudou = true;
+      }
+
+      if (mudou) {
+        alterado = true;
+        return leadAtualizado;
+      }
+      return lead;
+    });
+
+    if (alterado) {
+      setLeads(leadsLimpos);
+      salvarLeads(leadsLimpos);
+      console.log('[Faxineiro] Base limpa: Nomes e Telefones corrigidos.');
+      alert('🧹 Base de dados otimizada com sucesso!\n\nNomes "Sim Sucesso" e telefones corrompidos foram consertados.');
+    }
+    
+    localStorage.setItem(MIGRATION_FLAG, 'true');
+  }, []); // Roda só no mount
+  // =========================================================================
 
   useEffect(() => {
     if (isInitialMountRef.current) { isInitialMountRef.current = false; return; }
