@@ -19,9 +19,9 @@ export const LeadCard: React.FC<LeadCardProps> = ({
   onOpenDetails,
 }) => {
   const scoreInfo = obterInfoScore(lead);
+  // AQUI ESTÁ A CORREÇÃO: O WhatsApp fica verde se tiver celular, independente do status
   const isWhatsAppValido = ehCelularBR(lead.telefonePrincipal);
 
-  // Função para renderizar o ícone de score
   const renderScoreIcon = () => {
     if (!scoreInfo || scoreInfo.score < 0) return null;
     if (scoreInfo.categoria === 'hot') return <Flame className="w-3.5 h-3.5 text-rose-500" />;
@@ -35,7 +35,6 @@ export const LeadCard: React.FC<LeadCardProps> = ({
       onClick={() => onOpenDetails(lead)}
       className="group bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-slate-300 transition-all duration-200 cursor-pointer flex flex-col gap-3"
     >
-      {/* Header do Card */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h4 className="text-sm font-bold text-slate-900 truncate tracking-tight">
@@ -45,14 +44,11 @@ export const LeadCard: React.FC<LeadCardProps> = ({
             {lead.nomeContato}
           </p>
         </div>
-        
-        {/* Score Badge */}
         <div className="shrink-0 flex items-center justify-center w-6 h-6 rounded-full bg-slate-50 border border-slate-100">
           {renderScoreIcon()}
         </div>
       </div>
 
-      {/* Informações Extras */}
       <div className="flex items-center gap-3 text-[11px] text-slate-500 font-medium">
         <div className="flex items-center gap-1">
           <MapPin className="w-3 h-3 text-slate-400" />
@@ -64,10 +60,8 @@ export const LeadCard: React.FC<LeadCardProps> = ({
         </div>
       </div>
 
-      {/* Footer do Card (Ações Rápidas) */}
       <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 mt-auto">
         <div className="flex items-center gap-1.5">
-          {/* Botão WhatsApp */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -83,7 +77,6 @@ export const LeadCard: React.FC<LeadCardProps> = ({
             <MessageCircle className="w-4 h-4" />
           </button>
           
-          {/* Botão Ligação */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -96,7 +89,6 @@ export const LeadCard: React.FC<LeadCardProps> = ({
           </button>
         </div>
 
-        {/* Indicador de Cadência e Data */}
         <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-400">
           {(lead.cadenciaContatos ?? 0) > 0 && (
             <span className="flex items-center gap-1 bg-slate-50 px-1.5 py-0.5 rounded-md border border-slate-200/60">
