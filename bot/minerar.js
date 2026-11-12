@@ -1,105 +1,40 @@
-import fs from 'fs';
-import ExcelJS from 'exceljs';
+name: Minerador 24/7
+on:
+  workflow_dispatch: # Permite rodar manualmente
+  schedule:
+    - cron: '0 5 * * *' # 2h da manhã (Brasília)
+    - cron: '0 8 * * *' # 5h da manhã (Brasília)
+    - cron: '0 11 * * *' # 8h da manhã (Brasília)
 
-async function run() {
-  console.log("🤖 Acordando o minerador...");
+permissions:
+  contents: write
 
-  const API_KEY = process.env.CASADOSDADOS_API_KEY;
-  if (!API_KEY) throw new Error("Chave da API não configurada!");
+jobs:
+  minerar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Baixar o código
+        uses: actions/checkout@v4
 
-  const alvos = JSON.parse(fs.readFileSync('./bot/alvos.json', 'utf8'));
-  let progresso = JSON.parse(fs.readFileSync('./bot/progresso.json', 'utf8'));
+      - name: 🟢 Configurar o Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-  let leads = new Set();
-  let index = progresso.ultimoIndex;
+      - name: 📦 Instalar bibliotecas
+        run: npm install exceljs --legacy-peer-deps
 
-  if (index >= alvos.length) {
-    console.log("✅ Todos os alvos já foram minerados!");
-    return;
-  }
+      - name: 🤖 Rodar o Minerador
+        env:
+          CASADOSDADOS_API_KEY: ${{ secrets.CASADOSDADOS_API_KEY }}
+        run: node bot/minerar.js
 
-  const LIMITE_CARTUCHO = 300;
-
-  while (leads.size < LIMITE_CARTUCHO && index < alvos.length) {
-    const alvo = alvos[index];
-    console.log(`Buscando: ${alvo.bairro} - ${alvo.municipio} | CNAE: ${alvo.cnae} (Total atual: ${leads.size})`);
-
-    try {
-      const response = await fetch('https://api.casadosdados.com.br/v5/public/cnpj/pesquisa', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'api-key': API_KEY },
-        body: JSON.stringify({
-          codigo_atividade_principal: [alvo.cnae],
-          situacao_cadastral: ["ATIVA"],
-          uf: ["BA"],
-          municipio: [alvo.municipio],
-          bairro: [alvo.bairro],
-          limite: 20,
-          pagina: 1
-        })
-      });
-
-      const rawText = await response.text();
-
-      if (response.ok) {
-        try {
-          const data = JSON.parse(rawText);
-          const empresas = data.cnpjs || data.empresas || [];
-          
-          for (const emp of empresas) {
-            if (emp.cnpj) {
-              leads.add(emp.cnpj);
-              if (leads.size >= LIMITE_CARTUCHO) break;
-            }
-          }
-          
-          console.log(`   -> Retorno da API: ${empresas.length} empresas. Total: ${leads.size}`);
-        } catch (e) {
-          console.log(`   -> Erro ao ler JSON. Resposta: ${rawText.substring(0, 200)}`);
-        }
-      } else {
-        console.log(`   -> ERRO HTTP ${response.status}. Resposta: ${rawText}`);
-      }
-    } catch (error) {
-      console.error(`   -> Erro na busca de ${alvo.bairro}:`, error.message);
-    }
-
-    index++; 
-    
-    if (leads.size >= LIMITE_CARTUCHO) {
-      console.log("🛑 Limite de 300 leads atingido. Parando mineração.");
-      break; 
-    }
-
-    await new Promise(r => setTimeout(r, 2000));
-  }
-
-  progresso.ultimoIndex = index;
-  fs.writeFileSync('./bot/progresso.json', JSON.stringify(progresso, null, 2));
-
-  console.log(`📦 Gerando cartucho com ${leads.size} leads...`);
-  
-  // Garante que a pasta 'cartuchos' existe
-  if (!fs.existsSync('./cartuchos')) {
-    fs.mkdirSync('./cartuchos');
-  }
-
-  const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet('Leads AK');
-  worksheet.columns = [{ header: 'CNPJ', key: 'cnpj', width: 20 }];
-
-  leads.forEach(cnpj => worksheet.addRow({ cnpj }));
-
-  if (leads.size === 0) {
-      worksheet.addRow({ cnpj: "NENHUM_LEAD_ENCONTRADO" });
-  }
-
-  const dataStr = new Date().toISOString().split('T')[0];
-  const nomeArquivo = `cartucho_${dataStr}_${leads.size}leads.xlsx`;
-
-  // Salva dentro da pasta cartuchos
-  await workbook.xlsx.writeFile(`./cartuchos/${nomeArquivo}`);
-  console.log(`✅ Sucesso! Arquivo cartuchos/${nomeArquivo} criado.`);
-}
-
-run().catch(console.error);
+      - name: 💾 Salvar o Cartucho no GitHub
+        run: |
+          mkdir -p cartuchos
+          touch cartuchos/.gitkeep
+          git config --global user.name 'Robo iCtx'
+          git config --global user.email 'robo@ictx.com'
+          git add .
+          git commit -m "🤖 Novo cartucho gerado automaticamente [skip ci]" || echo "Nada para commitar"
+          git push
