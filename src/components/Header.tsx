@@ -1,12 +1,13 @@
 import React from 'react';
 import { Lead } from '../types/crm';
-import { Users, RotateCw, CheckCircle2 } from 'lucide-react';
+import { Users, RotateCw, CheckCircle2, User } from 'lucide-react';
 
 interface HeaderProps {
   leads: Lead[];
+  onOpenProfile: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ leads }) => {
+export const Header: React.FC<HeaderProps> = ({ leads, onOpenProfile }) => {
   const totalLeads = leads.length;
   const leadsEmProspeccao = leads.filter(l => l.status === 'em_prospeccao' || l.status === 'contato_1' || l.status === 'contato_2' || l.status === 'contato_3').length;
   const leadsFechados = leads.filter(l => l.status === 'fechado').length;
@@ -30,37 +31,48 @@ export const Header: React.FC<HeaderProps> = ({ leads }) => {
           </div>
         </div>
 
-        {/* Contadores (Desktop apenas) */}
-        <div className="hidden lg:flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center">
-              <Users className="w-3.5 h-3.5 text-slate-500" />
+        <div className="flex items-center gap-6">
+          {/* Contadores (Desktop apenas) */}
+          <div className="hidden lg:flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center">
+                <Users className="w-3.5 h-3.5 text-slate-500" />
+              </div>
+              <div>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Total</p>
+                <p className="font-bold text-slate-800 text-xs leading-none">{totalLeads}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Total</p>
-              <p className="font-bold text-slate-800 text-xs leading-none">{totalLeads}</p>
+
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center">
+                <RotateCw className="w-3.5 h-3.5 text-slate-500" />
+              </div>
+              <div>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Contato</p>
+                <p className="font-bold text-slate-800 text-xs leading-none">{leadsEmProspeccao}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center">
+                <CheckCircle2 className="w-3.5 h-3.5 text-slate-500" />
+              </div>
+              <div>
+                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Fechados</p>
+                <p className="font-bold text-slate-800 text-xs leading-none">{leadsFechados}</p>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center">
-              <RotateCw className="w-3.5 h-3.5 text-slate-500" />
-            </div>
-            <div>
-              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Contato</p>
-              <p className="font-bold text-slate-800 text-xs leading-none">{leadsEmProspeccao}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center">
-              <CheckCircle2 className="w-3.5 h-3.5 text-slate-500" />
-            </div>
-            <div>
-              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Fechados</p>
-              <p className="font-bold text-slate-800 text-xs leading-none">{leadsFechados}</p>
-            </div>
-          </div>
+          {/* Botão de Perfil (Aparece no PC. No mobile é controlado pela BottomNav) */}
+          <button
+            onClick={onOpenProfile}
+            className="hidden md:flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
+            title="Meu Perfil e Configurações"
+          >
+            <User className="w-4 h-4" />
+          </button>
         </div>
 
       </div>
