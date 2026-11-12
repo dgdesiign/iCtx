@@ -36,12 +36,6 @@ interface CachedToken {
   expiresAt: number;
 }
 
-function isMobile(): boolean {
-  if (typeof window === 'undefined') return false;
-  const ua = navigator.userAgent || '';
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) || window.innerWidth < 768;
-}
-
 export function setCachedAccessToken(accessToken: string) {
   if (!accessToken) return;
   const expiresAt = Date.now() + 55 * 60 * 1000;
@@ -64,23 +58,31 @@ export async function googleSignIn(): Promise<{ user: User; accessToken: string 
   const provider = new GoogleAuthProvider();
   SCOPES.forEach(scope => provider.addScope(scope));
 
-  if (isMobile()) {
-    await signInWithRedirect(auth, provider);
-    return null;
-  }
-
   try {
+    // 1. Tenta POPUP primeiro (funciona no PC e na maioria dos celulares modernos)
     const result: UserCredential = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     
     if (!credential?.accessToken) {
-      throw new Error("Não foi possível obter o token de acesso do Google.");
+      throw new Error("Não foi possível obter o token de acesso.");
     }
 
     setCachedAccessToken(credential.accessToken);
     return { user: result.user, accessToken: credential.accessToken };
   } catch (error: any) {
-    console.error("Erro no login com Google:", error);
+    console.warn("Popup falhou, tentando Redirect...", error);
+    
+    // 2. Se o popup for bloqueado (celular), usa Redirect como fallback
+    if (error.code === 'auth/popup-blocked' || error.code === 'auth/cancelled-popup-request' || error.code === 'auth/operation-not-supported-in-this-environment') {
+      try {
+        await signInWithRedirect(auth, provider);
+        return null; // Vai recarregar a página
+      } catch (redirectError) {
+        console.error("Erro no Redirect também:", redirectError);
+        throw redirectError;
+      }
+    }
+    
     throw error;
   }
 }
@@ -94,9 +96,20 @@ export function initAuth(
   onSuccess: (user: User, accessToken: string) => void,
   onFailure: () => void
 ) {
-  let unsub = () => {};
+  let resolved = false;
 
-  // 1) Processa redirect (mobile) em background
+  const resolver = (user: User | null) => {
+    if (resolved) return;
+    resolved = true;
+    if (user) {
+      const token = getAccessToken() || '';
+      onSuccess(user, token);
+    } else {
+      onFailure();
+    }
+  };
+
+  // Processa o redirect do mobile (se o usuário acabou de voltar do Google)
   getRedirectResult(auth)
     .then((result) => {
       if (result) {
@@ -106,34 +119,23 @@ export function initAuth(
         }
       }
     })
-    .catch((error) => {
-      console.error('Erro no getRedirectResult:', error);
-    });
+    .catch((error) => console.warn('Erro redirect:', error));
 
-  // 2) Listener que vai disparar quando o Firebase tiver o estado pronto
-  const startListener = () => {
-    unsub = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        const token = getAccessToken() || '';
-        onSuccess(user, token);
-      } else {
-        onFailure();
-      }
-    });
+  // Listener principal
+  const unsubscribe = onAuthStateChanged(auth, (user) => {
+    resolver(user);
+  });
+
+  // TRAVA DE SEGURANÇA: Se em 5 segundos o Firebase não responder, destrava a tela
+  const timeout = setTimeout(() => {
+    if (!resolved) {
+      console.warn('Timeout de autenticação atingido. Forçando estado.');
+      resolver(auth.currentUser);
+    }
+  }, 5000);
+
+  return () => {
+    unsubscribe();
+    clearTimeout(timeout);
   };
-
-  // 3) authStateReady é MÉTODO do auth (não função exportada)
-  //    Se existir, usa. Senão, inicia o listener direto (versão antiga).
-  if (typeof (auth as any).authStateReady === 'function') {
-    (auth as any).authStateReady()
-      .then(startListener)
-      .catch(() => {
-        console.warn('authStateReady falhou, iniciando listener direto');
-        startListener();
-      });
-  } else {
-    startListener();
-  }
-
-  return () => unsub();
 }
