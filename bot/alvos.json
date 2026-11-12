@@ -8,45 +8,85 @@
   { "municipio": "SALVADOR", "bairro": "Imbuí", "cnae": "5611201" },
   { "municipio": "SALVADOR", "bairro": "Brotas", "cnae": "5611201" },
   { "municipio": "SALVADOR", "bairro": "Cabula", "cnae": "5611201" },
+  { "municipio": "SALVADOR", "bairro": "Stella Maris", "cnae": "5611201" },
+  { "municipio": "SALVADOR", "bairro": "Piatã", "cnae": "5611201" },
+  { "municipio": "SALVADOR", "bairro": "Boca do Rio", "cnae": "5611201" },
+  { "municipio": "SALVADOR", "bairro": "Itaigara", "cnae": "5611201" },
+  { "municipio": "SALVADOR", "bairro": "CAB", "cnae": "5611201" },
+  { "municipio": "SALVADOR", "bairro": "Mussurunga", "cnae": "5611201" },
   
   { "municipio": "SALVADOR", "bairro": "Pituba", "cnae": "5612100" },
   { "municipio": "SALVADOR", "bairro": "Barra", "cnae": "5612100" },
   { "municipio": "SALVADOR", "bairro": "Rio Vermelho", "cnae": "5612100" },
   { "municipio": "SALVADOR", "bairro": "Itapuã", "cnae": "5612100" },
-  
+  { "municipio": "SALVADOR", "bairro": "Caminho das Árvores", "cnae": "5612100" },
+  { "municipio": "SALVADOR", "bairro": "Imbuí", "cnae": "5612100" },
+
   { "municipio": "SALVADOR", "bairro": "Pituba", "cnae": "4723700" },
   { "municipio": "SALVADOR", "bairro": "Barra", "cnae": "4723700" },
-  
+  { "municipio": "SALVADOR", "bairro": "Brotas", "cnae": "4723700" },
+  { "municipio": "SALVADOR", "bairro": "Cabula", "cnae": "4723700" },
+
   { "municipio": "SALVADOR", "bairro": "Pituba", "cnae": "9602501" },
   { "municipio": "SALVADOR", "bairro": "Ondina", "cnae": "9602501" },
   { "municipio": "SALVADOR", "bairro": "Itapuã", "cnae": "9602501" },
-  
+  { "municipio": "SALVADOR", "bairro": "Stella Maris", "cnae": "9602501" },
+  { "municipio": "SALVADOR", "bairro": "Imbuí", "cnae": "9602501" },
+  { "municipio": "SALVADOR", "bairro": "Caminho das Árvores", "cnae": "9602501" },
+
   { "municipio": "SALVADOR", "bairro": "Caminho das Árvores", "cnae": "8630501" },
   { "municipio": "SALVADOR", "bairro": "Imbuí", "cnae": "8630501" },
+  { "municipio": "SALVADOR", "bairro": "Itaigara", "cnae": "8630501" },
+  { "municipio": "SALVADOR", "bairro": "Pituba", "cnae": "8630501" },
+
+  { "municipio": "SALVADOR", "bairro": "Pituba", "cnae": "1091100" },
+  { "municipio": "SALVADOR", "bairro": "Barra", "cnae": "1091100" },
+  { "municipio": "SALVADOR", "bairro": "Itapuã", "cnae": "1091100" },
+  { "municipio": "SALVADOR", "bairro": "Brotas", "cnae": "1091100" },
+  { "municipio": "SALVADOR", "bairro": "Cabula", "cnae": "1091100" },
+
+  { "municipio": "SALVADOR", "bairro": "Pituba", "cnae": "9313100" },
+  { "municipio": "SALVADOR", "bairro": "Ondina", "cnae": "9313100" },
+  { "municipio": "SALVADOR", "bairro": "Caminho das Árvores", "cnae": "9313100" },
+
+  { "municipio": "SALVADOR", "bairro": "Pituba", "cnae": "4781400" },
+  { "municipio": "SALVADOR", "bairro": "Barra", "cnae": "4781400" },
+  { "municipio": "SALVADOR", "bairro": "Imbuí", "cnae": "4781400" },
 
   { "municipio": "LAURO DE FREITAS", "bairro": "Centro", "cnae": "5611201" },
   { "municipio": "LAURO DE FREITAS", "bairro": "Vilas do Atlântico", "cnae": "5611201" },
   { "municipio": "LAURO DE FREITAS", "bairro": "Ipitanga", "cnae": "5611201" },
+  { "municipio": "LAURO DE FREITAS", "bairro": "Portão", "cnae": "5611201" },
+  { "municipio": "LAURO DE FREITAS", "bairro": "Areia Branca", "cnae": "5611201" },
   { "municipio": "LAURO DE FREITAS", "bairro": "Centro", "cnae": "9602501" },
+  { "municipio": "LAURO DE FREITAS", "bairro": "Vilas do Atlântico", "cnae": "1091100" },
 
   { "municipio": "CAMACARI", "bairro": "Centro", "cnae": "5611201" },
   { "municipio": "CAMACARI", "bairro": "Guarajuba", "cnae": "5611201" },
   { "municipio": "CAMACARI", "bairro": "Arembepe", "cnae": "5611201" },
+  { "municipio": "CAMACARI", "bairro": "Vila de Abrantes", "cnae": "5611201" },
   { "municipio": "CAMACARI", "bairro": "Centro", "cnae": "4723700" },
+  { "municipio": "CAMACARI", "bairro": "Centro", "cnae": "9602501" },
 
   { "municipio": "CANDEIAS", "bairro": "Centro", "cnae": "5611201" },
   { "municipio": "CANDEIAS", "bairro": "Centro", "cnae": "9602501" },
+  { "municipio": "CANDEIAS", "bairro": "Nova Candeias", "cnae": "5611201" },
 
   { "municipio": "SIMÕES FILHO", "bairro": "Centro", "cnae": "5611201" },
   { "municipio": "SIMÕES FILHO", "bairro": "CIA", "cnae": "5611201" },
+  { "municipio": "SIMÕES FILHO", "bairro": "Ponto Parada", "cnae": "5611201" },
 
   { "municipio": "ALAGOINHAS", "bairro": "Centro", "cnae": "5611201" },
   { "municipio": "ALAGOINHAS", "bairro": "Centro", "cnae": "4723700" },
   { "municipio": "ALAGOINHAS", "bairro": "Centro", "cnae": "8630501" },
+  { "municipio": "ALAGOINHAS", "bairro": "Centro", "cnae": "9602501" },
 
   { "municipio": "MADRE DE DEUS", "bairro": "Centro", "cnae": "5611201" },
+  { "municipio": "MADRE DE DEUS", "bairro": "Suape", "cnae": "5611201" },
+  
   { "municipio": "SÃO SEBASTIÃO DO PASSÉ", "bairro": "Centro", "cnae": "5611201" },
   { "municipio": "MATA DE SÃO JOÃO", "bairro": "Praia do Forte", "cnae": "5611201" },
+  { "municipio": "MATA DE SÃO JOÃO", "bairro": "Praia do Forte", "cnae": "9602501" },
   { "municipio": "POJUCA", "bairro": "Centro", "cnae": "5611201" },
   { "municipio": "DIAS D'ÁVILA", "bairro": "Centro", "cnae": "5611201" }
 ]
