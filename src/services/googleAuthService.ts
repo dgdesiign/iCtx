@@ -3,14 +3,15 @@ import {
   getAuth, 
   GoogleAuthProvider, 
   signInWithPopup, 
+  signInWithRedirect, 
+  getRedirectResult,
   signOut, 
   onAuthStateChanged, 
   User,
   UserCredential,
-  browserPopupRedirectResolver // NOVO IMPORT AQUI
+  browserPopupRedirectResolver
 } from "firebase/auth";
 
-// Configuração do Firebase usando as variáveis de ambiente da Vercel
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: "gen-lang-client-0531276266.firebaseapp.com",
@@ -23,7 +24,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Escopos necessários para o iCtx acessar o Google Sheets e o Drive
 const SCOPES = [
   "https://www.googleapis.com/auth/spreadsheets",
   "https://www.googleapis.com/auth/drive.file",
@@ -36,19 +36,20 @@ interface CachedToken {
   expiresAt: number;
 }
 
-/**
- * Salva o token de acesso no sessionStorage com validade de 55 minutos
- */
+// Detecta se é mobile (iOS/Android ou tela pequena)
+function isMobile(): boolean {
+  if (typeof window === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) || window.innerWidth < 768;
+}
+
 export function setCachedAccessToken(accessToken: string) {
   if (!accessToken) return;
-  const expiresAt = Date.now() + 55 * 60 * 1000; // 55 minutos
+  const expiresAt = Date.now() + 55 * 60 * 1000;
   const data: CachedToken = { accessToken, expiresAt };
   sessionStorage.setItem(TOKEN_STORAGE_KEY, JSON.stringify(data));
 }
 
-/**
- * Recupera o token do sessionStorage se ainda for válido
- */
 export function getAccessToken(): string | null {
   const raw = sessionStorage.getItem(TOKEN_STORAGE_KEY);
   if (!raw) return null;
@@ -58,21 +59,26 @@ export function getAccessToken(): string | null {
     if (Date.now() < expiresAt - 60000) {
       return accessToken;
     }
-  } catch {
-    // Ignora erro de parse
-  }
+  } catch {}
   return null;
 }
 
 /**
- * Faz o login com o Google usando popup e obtém o token de acesso
+ * Login com Google: usa Redirect no mobile (popup é bloqueado) e Popup no desktop.
  */
 export async function googleSignIn(): Promise<{ user: User; accessToken: string } | null> {
   const provider = new GoogleAuthProvider();
   SCOPES.forEach(scope => provider.addScope(scope));
 
+  // NO MOBILE: Redirect (o app vai recarregar e o getRedirectResult trata)
+  if (isMobile()) {
+    await signInWithRedirect(auth, provider);
+    // O código abaixo não executa no mobile (a página é recarregada)
+    return null;
+  }
+
+  // NO DESKTOP: Popup
   try {
-    // A MUDANÇA ESTÁ AQUI: Forçando o resolvedor de popup
     const result: UserCredential = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     
@@ -84,31 +90,45 @@ export async function googleSignIn(): Promise<{ user: User; accessToken: string 
     return { user: result.user, accessToken: credential.accessToken };
   } catch (error: any) {
     console.error("Erro no login com Google:", error);
-    throw error; 
+    throw error;
   }
 }
 
-/**
- * Desconecta o usuário
- */
 export async function logoutGoogle(): Promise<void> {
   await signOut(auth);
   sessionStorage.removeItem(TOKEN_STORAGE_KEY);
 }
 
 /**
- * Inicializa o listener de autenticação.
+ * Inicializa o listener. Também trata o retorno do Redirect (mobile).
  */
 export function initAuth(
   onSuccess: (user: User, accessToken: string) => void,
   onFailure: () => void
 ) {
+  // 1) Trata o resultado do Redirect (se o usuário voltou do Google no mobile)
+  getRedirectResult(auth)
+    .then((result) => {
+      if (result) {
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential?.accessToken) {
+          setCachedAccessToken(credential.accessToken);
+          // onSuccess será chamado pelo onAuthStateChanged também, mas garantimos aqui
+        }
+      }
+    })
+    .catch((error) => {
+      console.error('Erro no getRedirectResult:', error);
+    });
+
+  // 2) Listener normal de estado de autenticação
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user) {
       const token = getAccessToken();
       if (token) {
         onSuccess(user, token);
       } else {
+        // Tentou logar mas o token não foi salvo (ex: redirect falhou)
         onFailure();
       }
     } else {
