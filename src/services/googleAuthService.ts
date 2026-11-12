@@ -7,7 +7,6 @@ import {
   getRedirectResult,
   signOut, 
   onAuthStateChanged, 
-  authStateReady,
   User,
   UserCredential,
   browserPopupRedirectResolver
@@ -111,23 +110,30 @@ export function initAuth(
       console.error('Erro no getRedirectResult:', error);
     });
 
-  // 2) Espera o Firebase restaurar a sessão do IndexedDB
-  authStateReady(auth)
-    .then(() => {
-      // Agora o Firebase sabe com certeza se tem user ou não
-      unsub = onAuthStateChanged(auth, (user) => {
-        if (user) {
-          const token = getAccessToken() || '';
-          onSuccess(user, token);
-        } else {
-          onFailure();
-        }
-      });
-    })
-    .catch((err) => {
-      console.error('Erro no authStateReady:', err);
-      onFailure(); // Se falhar, ao menos destrava o loading
+  // 2) Listener que vai disparar quando o Firebase tiver o estado pronto
+  const startListener = () => {
+    unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const token = getAccessToken() || '';
+        onSuccess(user, token);
+      } else {
+        onFailure();
+      }
     });
+  };
+
+  // 3) authStateReady é MÉTODO do auth (não função exportada)
+  //    Se existir, usa. Senão, inicia o listener direto (versão antiga).
+  if (typeof (auth as any).authStateReady === 'function') {
+    (auth as any).authStateReady()
+      .then(startListener)
+      .catch(() => {
+        console.warn('authStateReady falhou, iniciando listener direto');
+        startListener();
+      });
+  } else {
+    startListener();
+  }
 
   return () => unsub();
 }
