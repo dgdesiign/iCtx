@@ -1,8 +1,10 @@
 name: Minerador 24/7
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Permite rodar manualmente
   schedule:
-    - cron: '0 5 * * *'
+    - cron: '0 5 * * *' # 2h da manhã (Brasília)
+    - cron: '0 8 * * *' # 5h da manhã (Brasília)
+    - cron: '0 11 * * *' # 8h da manhã (Brasília)
 
 permissions:
   contents: write
@@ -31,6 +33,7 @@ jobs:
         run: |
           git config --global user.name 'Robo iCtx'
           git config --global user.email 'robo@ictx.com'
-          git add -A
+          # O "git add ." garante que a pasta cartuchos seja criada se não existir
+          git add .
           git commit -m "🤖 Novo cartucho gerado automaticamente [skip ci]" || echo "Nada para commitar"
           git push
