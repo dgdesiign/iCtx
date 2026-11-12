@@ -12,15 +12,16 @@ export interface ColunaKanbanConfig {
   id: LeadStatus;
   titulo: string;
   subtitulo: string;
-  corHeader: string;
+  corTexto: string; // Apenas a cor do texto do título
+  corBadge: string; // Apenas a cor do fundo do número
 }
 
 export const COLUNAS_KANBAN: ColunaKanbanConfig[] = [
-  { id: 'novo', titulo: 'Novos', subtitulo: 'Aguardando', corHeader: 'bg-slate-50 text-slate-700' },
-  { id: 'em_prospeccao', titulo: 'Prospecção', subtitulo: 'Cadência', corHeader: 'bg-slate-50 text-slate-700' },
-  { id: 'negociacao', titulo: 'Negociação', subtitulo: 'Proposta', corHeader: 'bg-slate-50 text-slate-700' },
-  { id: 'fechado', titulo: 'Fechado', subtitulo: 'Ativo', corHeader: 'bg-emerald-50 text-emerald-800' },
-  { id: 'descartado', titulo: 'Descartado', subtitulo: 'Sem interesse', corHeader: 'bg-slate-50 text-slate-500' },
+  { id: 'novo', titulo: 'Novos', subtitulo: 'Aguardando', corTexto: 'text-blue-700', corBadge: 'bg-blue-100 text-blue-800' },
+  { id: 'em_prospeccao', titulo: 'Prospecção', subtitulo: 'Cadência', corTexto: 'text-amber-700', corBadge: 'bg-amber-100 text-amber-800' },
+  { id: 'negociacao', titulo: 'Negociação', subtitulo: 'Proposta', corTexto: 'text-purple-700', corBadge: 'bg-purple-100 text-purple-800' },
+  { id: 'fechado', titulo: 'Fechado', subtitulo: 'Ativo', corTexto: 'text-emerald-700', corBadge: 'bg-emerald-100 text-emerald-800' },
+  { id: 'descartado', titulo: 'Descartado', subtitulo: 'Sem interesse', corTexto: 'text-slate-600', corBadge: 'bg-slate-200 text-slate-700' },
 ];
 
 interface PipelineKanbanProps {
@@ -170,15 +171,22 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
 
             return (
               <div key={coluna.id} className="w-[175px] min-w-[175px] md:w-[280px] md:min-w-[280px] shrink-0 snap-start bg-slate-50/80 rounded-xl border border-slate-200/60 flex flex-col max-h-[calc(100dvh-180px)]">
-                <div className={`p-2 rounded-t-xl border-b border-slate-200/60 flex items-center justify-between sticky top-0 z-10 backdrop-blur-sm ${coluna.corHeader}`}>
+                
+                {/* Header da Coluna (Cor apenas no Título e no Badge) */}
+                <div className="p-2 rounded-t-xl border-b border-slate-200/60 flex items-center justify-between sticky top-0 z-10 bg-slate-50/95 backdrop-blur-sm">
                   <div className="min-w-0">
-                    <h3 className="font-bold text-[10px] md:text-xs uppercase tracking-wider truncate">{coluna.titulo}</h3>
-                    <p className="text-[9px] opacity-70 font-medium truncate">{coluna.subtitulo}</p>
+                    <h3 className={`font-bold text-[10px] md:text-xs uppercase tracking-wider truncate ${coluna.corTexto}`}>
+                      {coluna.titulo}
+                    </h3>
+                    <p className="text-[9px] text-slate-500 font-medium truncate">
+                      {coluna.subtitulo}
+                    </p>
                   </div>
-                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-white/60 shadow-sm border border-black/5 shrink-0 ml-1">
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold shadow-sm border border-black/5 shrink-0 ml-1 ${coluna.corBadge}`}>
                     {leadsDaColuna.length}
                   </span>
                 </div>
+
                 <div className="p-1.5 overflow-y-auto flex-1 space-y-1.5 no-scrollbar">
                   {leadsOrdenados.length === 0 ? (
                     <div className="h-16 flex items-center justify-center border-2 border-dashed border-slate-200 rounded-lg text-[10px] text-slate-400 font-medium">
@@ -219,7 +227,7 @@ export const PipelineKanban: React.FC<PipelineKanbanProps> = ({
                       <p className="text-xs text-slate-500 truncate">{lead.nomeContato} · {lead.municipio || 'N/A'}</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 ml-2">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusConfig?.corHeader || 'bg-slate-100 text-slate-600'}`}>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusConfig?.corBadge || 'bg-slate-100 text-slate-600'}`}>
                         {statusConfig?.titulo || lead.status}
                       </span>
                       <button onClick={(e) => { e.stopPropagation(); onOpenMessageComposer(lead); }} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg">
