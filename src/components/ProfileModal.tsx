@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   X, LogOut, CheckCircle2, Cloud, Sparkles, Upload, FileText, 
   Database, Smartphone, FileSpreadsheet, Target, BarChart3, 
-  Bell, Package, Loader2, LayoutGrid, List
+  Bell, Package, Loader2, LayoutGrid, List, ArrowLeft
 } from 'lucide-react';
 import { User as FirebaseUser } from 'firebase/auth';
 
@@ -14,7 +14,6 @@ interface ProfileModalProps {
   isSyncing: boolean;
   lastSyncTime: string | null;
   isSupervisor: boolean;
-  // Handlers completos
   onOpenEnrich: () => void;
   isEnriching: boolean;
   enrichProgress: number;
@@ -28,7 +27,6 @@ interface ProfileModalProps {
   onOpenSupervisor: () => void;
   onOpenNotifications: () => void;
   onOpenCartuchos: () => void;
-  // Visualização
   modoVisualizacao: 'kanban' | 'lista';
   onToggleVisualizacao: (modo: 'kanban' | 'lista') => void;
 }
@@ -61,12 +59,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="bg-white w-full max-w-md rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col animate-in slide-in-from-bottom-10 md:zoom-in-95 duration-200">
         
-        {/* Header */}
+        {/* Header com botão Voltar */}
         <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
-          <h3 className="font-bold text-slate-900">Minha Conta & Configurações</h3>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full cursor-pointer">
-            <X className="w-5 h-5" />
+          <button onClick={onClose} className="p-2 -ml-2 text-slate-600 hover:bg-slate-200 rounded-full cursor-pointer flex items-center gap-1">
+            <ArrowLeft className="w-5 h-5" />
+            <span className="text-sm font-bold">Voltar</span>
           </button>
+          <h3 className="font-bold text-slate-900">Configurações</h3>
+          <div className="w-8 h-8" /> {/* Placeholder para centralizar */}
         </div>
 
         <div className="overflow-y-auto flex-1">
@@ -90,7 +90,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
 
           {/* Seção: Visualização */}
           <div className="p-3 border-b border-slate-100">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-2">Visualização</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-2">Visualização de Leads</p>
             <div className="flex bg-slate-100 p-1 rounded-xl">
               <button
                 onClick={() => onToggleVisualizacao('kanban')}
