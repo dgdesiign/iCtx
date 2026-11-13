@@ -3,7 +3,7 @@ import {
   X, Building2, User, Phone, FileText, Clock, Sparkles,
   MessageCircle, PhoneCall, Save, CheckCircle2, Edit2, CreditCard,
   QrCode, Copy, ArrowLeft, ShieldAlert, ShieldCheck,
-  Check, ChevronDown, AlertTriangle, RefreshCw, MapPin
+  Check, ChevronDown, AlertTriangle, RefreshCw, MapPin, Landmark
 } from 'lucide-react';
 import { Lead, LeadStatus } from '../types/crm';
 import { COLUNAS_KANBAN } from './PipelineKanban';
@@ -144,6 +144,10 @@ export const LeadDetailDrawer: React.FC<any> = ({ lead, isOpen, onClose, onUpdat
   const razaoValor = lead.razaoSocial || lead.empresaExibicao || '';
   const telefoneValor = lead.telefonePrincipalFormatado || lead.telefonePrincipal || (lead as any).telefone || '';
   const enderecoCompleto = [lead.logradouro, lead.numero, lead.bairro, lead.municipio || lead.cidade, lead.uf].filter(Boolean).join(', ');
+  
+  // Novos campos solicitados
+  const naturezaJuridica = (lead as any).naturezaJuridica || (lead as any).natureza_juridica || 'Não informada';
+  const cnaeTexto = lead.cnaeCodigo ? `${lead.cnaeCodigo} - ${lead.cnaeDescricao || 'Atividade não detalhada'}` : 'Não informado';
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
@@ -332,6 +336,26 @@ export const LeadDetailDrawer: React.FC<any> = ({ lead, isOpen, onClose, onUpdat
                   </div>
                 )}
               </div>
+
+              {/* NOVA SEÇÃO: DADOS DA RECEITA (NATUREZA JURÍDICA & ATIVIDADE) */}
+              <Section title="Dados da Receita (Atividade & Natureza)" icon={Landmark} defaultOpen={true}>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between items-center bg-slate-50 p-2 rounded">
+                    <div className="min-w-0 pr-2">
+                      <span className="text-[9px] text-slate-400 block uppercase font-bold">Atividade Primária (CNAE)</span>
+                      <span className="text-slate-800 font-medium text-[11px] leading-tight block">{cnaeTexto}</span>
+                    </div>
+                    <button onClick={() => handleCopy(lead.cnaeCodigo || '', 'CNAE')} className="text-slate-400 cursor-pointer shrink-0"><Copy className="w-3.5 h-3.5" /></button>
+                  </div>
+                  <div className="flex justify-between items-center bg-slate-50 p-2 rounded">
+                    <div>
+                      <span className="text-[9px] text-slate-400 block uppercase font-bold">Natureza Jurídica</span>
+                      <span className="text-slate-800 font-medium text-[11px]">{naturezaJuridica}</span>
+                    </div>
+                    <button onClick={() => handleCopy(naturezaJuridica, 'Natureza Jurídica')} className="text-slate-400 cursor-pointer"><Copy className="w-3.5 h-3.5" /></button>
+                  </div>
+                </div>
+              </Section>
 
               <Section title="Ficha Cadastral (Portal AK)" icon={FileText}>
                 <div className="space-y-2 text-xs">
