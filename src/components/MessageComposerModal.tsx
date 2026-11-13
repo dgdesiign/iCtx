@@ -1,20 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import {
   X,
-  Send,
   Copy,
   Check,
   Building2,
   User,
-  Phone,
   Sparkles,
   ArrowRight,
   ArrowLeft,
-  ShieldAlert,
-  Clock,
   ExternalLink,
   MessageSquare,
-  ChevronRight,
   Info,
 } from 'lucide-react';
 import { Lead, LeadStatus, MessageTemplate, TemplateEtapa } from '../types/crm';
@@ -387,7 +382,7 @@ export const MessageComposerModal: React.FC<MessageComposerModalProps> = ({
 
               {/* Instrução visual anti-spam */}
               <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-xs flex items-center gap-2 shadow-2xs">
-                <span className="text-base">💡</span>
+                <Info className="w-4 h-4 text-blue-600 shrink-0" />
                 <span className="font-medium">
                   Clique em abrir o WhatsApp, depois copie e cole os blocos um a um.
                 </span>
@@ -533,7 +528,7 @@ export const MessageComposerModal: React.FC<MessageComposerModalProps> = ({
                   <option value="contato_2">Contato 2 (Follow-up)</option>
                   <option value="contato_3">Contato 3 (Ligação)</option>
                   <option value="negociacao">Em Negociação</option>
-                  <option value="fechado">Fechado 🎉</option>
+                  <option value="fechado">Fechado</option>
                   <option value="descartado">Descartado</option>
                 </select>
               </div>
