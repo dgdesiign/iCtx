@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Download, FileSpreadsheet, Loader2, RefreshCw } from 'lucide-react';
+import { X, Download, FileSpreadsheet, Loader2, RefreshCw, AlertTriangle, ExternalLink } from 'lucide-react';
 
 interface CartuchosModalProps {
   isOpen: boolean;
@@ -20,37 +20,45 @@ export const CartuchosModal: React.FC<CartuchosModalProps> = ({ isOpen, onClose 
   const carregarCartuchos = async () => {
     setCarregando(true);
     setErro(null);
+    
     try {
-      // Tenta buscar na branch 'main'. Se o seu repositório usar 'master', troque aqui.
-      const url = 'https://api.github.com/repos/dgdesiign/iCtx/contents/cartuchos?ref=main';
-      console.log(`[Debug Cartuchos] Buscando em: ${url}`);
+      // O parâmetro 't=' força o navegador a não usar cache e buscar fresco do GitHub
+      const url = `https://api.github.com/repos/dgdesiign/iCtx/contents/cartuchos?ref=main&t=${Date.now()}`;
       
-      const response = await fetch(url);
-      
+      const response = await fetch(url, {
+        headers: { 'Accept': 'application/vnd.github.v3+json' }
+      });
+
       if (!response.ok) {
-        throw new Error(`Erro GitHub: ${response.status} - ${response.statusText}`);
+        if (response.status === 403) {
+          throw new Error('Limite do GitHub atingido. Tente novamente mais tarde.');
+        }
+        throw new Error(`Falha na comunicação com GitHub (Erro ${response.status})`);
       }
 
       const data = await response.json();
-      console.log('[Debug Cartuchos] Resposta do GitHub:', data);
       
       if (!Array.isArray(data)) {
-        throw new Error('A resposta do GitHub não é uma lista de arquivos.');
+        throw new Error('O GitHub retornou um formato de dados inesperado.');
       }
 
+      // Filtra estritamente por arquivos (não pastas) que terminam com .xlsx
       const arquivosXlsx = data
-        .filter((item: any) => item.name.endsWith('.xlsx'))
+        .filter((item: any) => item.type === 'file' && item.name.toLowerCase().endsWith('.xlsx'))
         .map((item: any) => ({
           name: item.name,
           download_url: item.download_url,
-          size: item.size
+          size: item.size || 0
         }));
 
+      // Ordena do mais recente para o mais antigo (pelo nome)
       arquivosXlsx.sort((a: any, b: any) => b.name.localeCompare(a.name));
+      
       setArquivos(arquivosXlsx);
+
     } catch (err: any) {
-      console.error('[Debug Cartuchos] Erro:', err);
-      setErro(err.message || 'Erro ao carregar cartuchos.');
+      console.error('[Cartuchos] Erro detalhado:', err);
+      setErro(err.message || 'Não foi possível carregar a lista de cartuchos.');
     } finally {
       setCarregando(false);
     }
@@ -90,14 +98,23 @@ export const CartuchosModal: React.FC<CartuchosModalProps> = ({ isOpen, onClose 
           )}
 
           {erro && !carregando && (
-            <div className="p-3 bg-rose-50 text-rose-700 rounded-xl text-sm text-center font-medium">
-              {erro}
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-center space-y-3">
+              <AlertTriangle className="w-8 h-8 text-rose-500 mx-auto" />
+              <p className="text-sm text-rose-800 font-medium">{erro}</p>
+              <a 
+                href="https://github.com/dgdesiign/iCtx/tree/main/cartuchos" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-rose-300 text-rose-700 rounded-lg text-sm font-bold shadow-sm hover:bg-rose-100 transition-colors"
+              >
+                <ExternalLink className="w-4 h-4" /> Abrir pasta no GitHub
+              </a>
             </div>
           )}
 
           {!carregando && !erro && arquivos.length === 0 && (
             <div className="text-center py-10 text-slate-400 text-sm">
-              Nenhum arquivo .xlsx encontrado na pasta `cartuchos`.
+              Nenhum arquivo .xlsx encontrado.
             </div>
           )}
 
