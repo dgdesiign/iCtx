@@ -21,26 +21,35 @@ export const CartuchosModal: React.FC<CartuchosModalProps> = ({ isOpen, onClose 
     setCarregando(true);
     setErro(null);
     try {
-      // Busca a lista de arquivos diretamente da pasta 'cartuchos' no GitHub
-      const response = await fetch('https://api.github.com/repos/dgdesiign/iCtx/contents/cartuchos');
+      // Tenta buscar na branch 'main'. Se o seu repositório usar 'master', troque aqui.
+      const url = 'https://api.github.com/repos/dgdesiign/iCtx/contents/cartuchos?ref=main';
+      console.log(`[Debug Cartuchos] Buscando em: ${url}`);
       
-      if (!response.ok) throw new Error('Falha ao buscar os cartuchos no GitHub.');
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`Erro GitHub: ${response.status} - ${response.statusText}`);
+      }
 
       const data = await response.json();
+      console.log('[Debug Cartuchos] Resposta do GitHub:', data);
       
-      // Filtra apenas arquivos .xlsx e ignora o .gitkeep
-      const arquivosXlsx = Array.isArray(data) 
-        ? data.filter((item: any) => item.name.endsWith('.xlsx')).map((item: any) => ({
-            name: item.name,
-            download_url: item.download_url,
-            size: item.size
-          }))
-        : [];
+      if (!Array.isArray(data)) {
+        throw new Error('A resposta do GitHub não é uma lista de arquivos.');
+      }
 
-      // Ordena do mais recente para o mais antigo
+      const arquivosXlsx = data
+        .filter((item: any) => item.name.endsWith('.xlsx'))
+        .map((item: any) => ({
+          name: item.name,
+          download_url: item.download_url,
+          size: item.size
+        }));
+
       arquivosXlsx.sort((a: any, b: any) => b.name.localeCompare(a.name));
       setArquivos(arquivosXlsx);
     } catch (err: any) {
+      console.error('[Debug Cartuchos] Erro:', err);
       setErro(err.message || 'Erro ao carregar cartuchos.');
     } finally {
       setCarregando(false);
@@ -88,7 +97,7 @@ export const CartuchosModal: React.FC<CartuchosModalProps> = ({ isOpen, onClose 
 
           {!carregando && !erro && arquivos.length === 0 && (
             <div className="text-center py-10 text-slate-400 text-sm">
-              Nenhum cartucho encontrado na pasta.
+              Nenhum arquivo .xlsx encontrado na pasta `cartuchos`.
             </div>
           )}
 
