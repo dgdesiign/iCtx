@@ -4,7 +4,7 @@ export const INITIAL_TEMPLATES: MessageTemplate[] = [
   // --- CONTATO 1: ABORDAGENS INICIAIS ---
   {
     id: 'pronampe_capital',
-    titulo: '💰 Pronampe / Condições Especiais PJ',
+    titulo: 'Pronampe / Condições Especiais PJ',
     etapa: 'contato_1',
     canal: 'whatsapp',
     destaque: 'Mais Utilizado',
@@ -17,7 +17,7 @@ Não consigo te prometer aprovação antes de consultar o CNPJ, mas o processo �
   },
   {
     id: 'link_pagamento_varejo',
-    titulo: '🔗 Link de Pagamento & Redução de Taxas',
+    titulo: 'Link de Pagamento & Redução de Taxas',
     etapa: 'contato_1',
     canal: 'whatsapp',
     destaque: 'Comércio / Varejo',
@@ -30,7 +30,7 @@ Temos uma solução de Link de Pagamento com possibilidade de custo zero para fa
   },
   {
     id: 'proximidade_regional',
-    titulo: '📍 Consultor Regional (Proximidade Local)',
+    titulo: 'Consultor Regional (Proximidade Local)',
     etapa: 'contato_1',
     canal: 'whatsapp',
     destaque: 'Alta Resposta',
@@ -45,7 +45,7 @@ O processo é bem direto e prático, sem complicação. Você prefere que eu te 
   // --- CONTATO 2: FOLLOW-UP (PARA QUEM NÃO RESPONDEU) ---
   {
     id: 'followup_rotina',
-    titulo: '🕒 Follow-up Leve (Rotina Corrida)',
+    titulo: 'Follow-up Leve (Rotina Corrida)',
     etapa: 'contato_2',
     canal: 'whatsapp',
     destaque: 'Não Invasivo',
@@ -56,7 +56,7 @@ Passando só para saber se você conseguiu ver minha mensagem sobre as condiçõ
   },
   {
     id: 'followup_urgencia_credito',
-    titulo: '📊 Follow-up Consulta de Viabilidade',
+    titulo: 'Follow-up Consulta de Viabilidade',
     etapa: 'contato_2',
     canal: 'whatsapp',
     destaque: 'Gatilho Urgência',
@@ -67,7 +67,7 @@ Leva menos de 2 minutos e é totalmente sem compromisso. O que acha?`,
   },
   {
     id: 'followup_audio_permissao',
-    titulo: '🎙️ Pedido para Enviar Áudio Explicativo',
+    titulo: 'Pedido para Enviar Áudio Explicativo',
     etapa: 'contato_2',
     canal: 'whatsapp',
     destaque: 'Humanizado',
@@ -80,7 +80,7 @@ Pra não tomar seu tempo digitando: compensa eu te mandar um áudio de 40 segund
   // --- CONTATO 3: LIGAÇÃO & TENTATIVA FINAL ---
   {
     id: 'script_ligacao_completo',
-    titulo: '📞 Roteiro de Ligação (Telefonia / Celular)',
+    titulo: 'Roteiro de Ligação (Telefonia / Celular)',
     etapa: 'contato_3',
     canal: 'ligacao',
     destaque: 'Script Falado',
@@ -98,7 +98,7 @@ Hoje você costuma movimentar a {empresa} por qual banco?"
   },
   {
     id: 'whatsapp_pos_ligacao',
-    titulo: '📱 WhatsApp Logo Após Tentar Ligar',
+    titulo: 'WhatsApp Logo Após Tentar Ligar',
     etapa: 'contato_3',
     canal: 'whatsapp',
     destaque: 'Pós-Ligação',
@@ -111,7 +111,7 @@ Quando tiver 1 minutinho livre, me dá um toque por aqui! É sobre aquela consul
   // --- RESPOSTAS DE OBJEÇÕES (GATILHOS RÁPIDOS) ---
   {
     id: 'objecao_no_momento_curioso',
-    titulo: '🛡️ Objeção: "No momento não"',
+    titulo: 'Objeção: "No momento não"',
     etapa: 'objecao',
     canal: 'whatsapp',
     destaque: 'Reversão #1',
@@ -122,7 +122,7 @@ Só por curiosidade rápida: vocês já contam com condições diferenciadas de 
   },
   {
     id: 'objecao_ja_tem_banco',
-    titulo: '🏦 Objeção: "Já tenho conta em outro banco"',
+    titulo: 'Objeção: "Já tenho conta em outro banco"',
     etapa: 'objecao',
     canal: 'whatsapp',
     destaque: 'Diversificação',
@@ -135,7 +135,7 @@ Como a abertura que represento para o Santander é rápida e com isenção de ta
   },
   {
     id: 'objecao_manda_por_email',
-    titulo: '📧 Objeção: "Manda por e-mail"',
+    titulo: 'Objeção: "Manda por e-mail"',
     etapa: 'objecao',
     canal: 'whatsapp',
     destaque: 'Filtro',
@@ -146,7 +146,7 @@ Qual é o seu melhor e-mail? Vou te enviar o material agora e já deixo um resum
   },
   {
     id: 'descarte_porta_aberta',
-    titulo: '🚪 Encerramento Elegante (Gatilho do Desapego)',
+    titulo: 'Encerramento Elegante (Gatilho do Desapego)',
     etapa: 'fechamento',
     canal: 'whatsapp',
     destaque: 'Última Cartada',
@@ -159,7 +159,7 @@ Desejo muito sucesso com a {empresa} e ótimos negócios!`,
   },
   {
     id: 'documentos_abertura',
-    titulo: '📋 Documentos para Início Prático',
+    titulo: 'Documentos para Início Prático',
     etapa: 'fechamento',
     canal: 'whatsapp',
     destaque: 'Fechamento',
