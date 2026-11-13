@@ -11,6 +11,4 @@ const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
-
-// Exporta a instância do banco de dados para ser usada em todo o app
 export const db = getFirestore(app);
