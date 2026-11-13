@@ -246,7 +246,7 @@ export default function App() {
   useEffect(() => { salvarLeads(leads); }, [leads]);
 
   // =========================================================================
-  // 🧹 O FAXINEIRO DE DADOS (Roda apenas 1 vez no primeiro carregamento)
+  // O FAXINEIRO DE DADOS (Roda apenas 1 vez no primeiro carregamento)
   // =========================================================================
   useEffect(() => {
     const MIGRATION_FLAG = 'ictx_migration_janitor_v1';
@@ -311,7 +311,7 @@ export default function App() {
       setLeads(leadsLimpos);
       salvarLeads(leadsLimpos);
       console.log('[Faxineiro] Base limpa: Nomes e Telefones corrigidos.');
-      alert('🧹 Base de dados otimizada com sucesso!\n\nNomes "Sim Sucesso" e telefones corrompidos foram consertados.');
+      alert('Base de dados otimizada com sucesso!\n\nNomes "Sim Sucesso" e telefones corrompidos foram consertados.');
     }
     
     localStorage.setItem(MIGRATION_FLAG, 'true');
