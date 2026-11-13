@@ -1,5 +1,9 @@
 import { INITIAL_TEMPLATES } from '../data/initialTemplates';
 import { ColumnConfig, Lead, LeadStatus, MessageTemplate } from '../types/crm';
+import { autocorrigeLead } from '../services/cnpjService';
+import { safeParseLead, LeadSchema } from '../schemas/leadSchema';
+import { calcularProximoFollowUp } from './cadencia';
+import { analisarMeiRazaoSocial } from '../services/cnpjService';
 
 const STORAGE_LEADS_KEY = 'santander_leads_v2';
 const STORAGE_TEMPLATES_KEY = 'santander_templates_v3';
@@ -57,7 +61,7 @@ export const KANBAN_COLUMNS: ColumnConfig[] = [
   },
   {
     id: 'fechado',
-    titulo: 'Fechado 🎉',
+    titulo: 'Fechado',
     subtitulo: 'Conta aberta / Crédito',
     corBadge: 'bg-emerald-100 text-emerald-800',
     corBorda: 'border-emerald-300',
@@ -75,16 +79,12 @@ export const KANBAN_COLUMNS: ColumnConfig[] = [
   },
 ];
 
-import { autocorrigeLead } from '../services/cnpjService';
-import { safeParseLead, LeadSchema } from '../schemas/leadSchema';
-
 export function carregarLeads(): Lead[] {
   try {
     const salvo = localStorage.getItem(STORAGE_LEADS_KEY);
     if (salvo) {
       const parsed: Lead[] = JSON.parse(salvo);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Autocorrige leads que possam ter dados invertidos de versões anteriores
         return parsed.map((lead) => autocorrigeLead(lead));
       }
     }
@@ -107,7 +107,7 @@ export function carregarLeads(): Lead[] {
 export function salvarLeads(leads: Lead[]): void {
   try {
     if (leads.length === 0) {
-      // Proteção de integridade: se já existiam leads salvos, nunca zera silenciosamente sem confirmação explícita
+      // Proteção de integridade: se já existiam leads salvos, nunca zera silenciosamente
       const existente = localStorage.getItem(STORAGE_LEADS_KEY);
       if (existente) {
         try {
@@ -176,7 +176,6 @@ export function importarBackup(conteudo: string | any): BackupImportResult {
         leadsRecuperados.push(autocorrigeLead(parseResult.data as Lead));
       } else {
         totalFalhas++;
-        // Preenche campos faltantes com fallbacks seguros (id = crypto.randomUUID(), status = 'novo')
         const leadComFallback = safeParseLead(rawItem);
         leadsRecuperados.push(autocorrigeLead(leadComFallback as Lead));
       }
@@ -195,13 +194,8 @@ export function importarBackup(conteudo: string | any): BackupImportResult {
   };
 }
 
-import { calcularProximoFollowUp } from './cadencia';
-
 /**
- * Atualiza o status do lead aplicando as regras de cadência automática:
- * - dataUltimoContato recebe a data atual
- * - proximoFollowUp calculado de acordo com a etapa (contato_1: +3d, contato_2: +3d, contato_3: +5d, negociacao: +2d, novo/fechado: vazio)
- * - tentativasContato incrementado para contato_1, contato_2 e contato_3
+ * Atualiza o status do lead aplicando as regras de cadência automática.
  */
 export function aplicarMudancaStatusCadencia(lead: Lead, novoStatus: LeadStatus): Lead {
   const agoraIso = new Date().toISOString();
@@ -246,17 +240,13 @@ export function salvarTemplates(templates: MessageTemplate[]): void {
   }
 }
 
-import { analisarMeiRazaoSocial } from '../services/cnpjService';
-
 /**
  * Substitui as variáveis {nome}, {empresa}, {cidade}, {idade}, {socio}, {cnae} no texto
  * com camada de inteligência anti-spam para MEI / MEI Desenquadrado / Empresário Individual
  */
 export function preencherVariaveisMensagem(texto: string, lead: Partial<Lead>): string {
-  // Reavalia na hora caso o lead não tenha sido previamente sanitizado
   const analise = analisarMeiRazaoSocial(lead.razaoSocial, lead.nomeFantasia, lead.naturezaJuridica);
 
-  // 1. Resolução do Nome do Titular / Contato Real
   let nomeCompleto = (lead.nomeContato || '').trim();
   const nomeEInvalidoOuTelefone =
     !nomeCompleto ||
@@ -278,15 +268,11 @@ export function preencherVariaveisMensagem(texto: string, lead: Partial<Lead>): 
     }
   }
 
-  // Primeiro nome para saudação humanizada no WhatsApp (ex: "Oi Geraldino" ao invés de nomes longos ou números)
   let primeiroNome = '';
   if (nomeCompleto) {
     primeiroNome = nomeCompleto.split(/\s+/)[0];
   }
 
-  // 2. Resolução do Nome da Empresa
-  // Se for MEI ou MEI Desenquadrado sem nome fantasia comercial registrado, NUNCA usa o nome próprio/CNPJ da pessoa como empresa
-  // Usa "sua empresa" de forma humanizada e sem asteriscos
   const isMeiSemFantasia =
     lead.isMeiDesenquadrado ||
     analise.isMeiOuDesenquadrado ||
@@ -311,7 +297,6 @@ export function preencherVariaveisMensagem(texto: string, lead: Partial<Lead>): 
 
   let textoProcessado = texto;
 
-  // Se a empresa é "sua empresa", remove asteriscos para não colocar negrito robótico em *sua empresa*
   if (empresa === 'sua empresa') {
     textoProcessado = textoProcessado
       .replace(/\*\{empresa\}\*/g, 'sua empresa')
@@ -322,17 +307,14 @@ export function preencherVariaveisMensagem(texto: string, lead: Partial<Lead>): 
       .replace(/rotina aí na \*?sua empresa\*?/gi, 'rotina aí na empresa')
       .replace(/da \*?sua empresa\*?/gi, 'da sua empresa');
   } else {
-    // Para empresas com Razão Social ou Fantasia comercial tradicional (ex: *CR Serviços Empresariais*)
     textoProcessado = textoProcessado.replace(/{empresa}/g, empresa);
   }
 
-  // Se temos o primeiro nome da pessoa física (ex: Geraldino)
   if (primeiroNome) {
     textoProcessado = textoProcessado
       .replace(/\{nome\}/g, primeiroNome)
       .replace(/\{nomeCompleto\}/g, nomeCompleto);
   } else {
-    // Se não há nome identificado, evita saudações esquisitas como "Oi ," ou "Oi Cliente,"
     textoProcessado = textoProcessado
       .replace(/Oi \{nome\},/gi, 'Oi,')
       .replace(/Olá \{nome\},/gi, 'Olá,')
@@ -354,7 +336,6 @@ export function preencherVariaveisMensagem(texto: string, lead: Partial<Lead>): 
 export function gerarLinkWhatsApp(telefone: string, mensagem: string): string {
   const limpo = telefone.replace(/\D/g, '');
   if (!limpo) return '';
-  // Garante DDI 55 do Brasil
   const numeroCompleto = limpo.startsWith('55') ? limpo : `55${limpo}`;
   return `https://wa.me/${numeroCompleto}?text=${encodeURIComponent(mensagem)}`;
 }
@@ -364,23 +345,9 @@ export function gerarLinkWhatsApp(telefone: string, mensagem: string): string {
  */
 export function exportarLeadsCsv(leads: Lead[]): void {
   const colunas = [
-    'CNPJ',
-    'RazaoSocial',
-    'NomeFantasia',
-    'ResponsavelLead',
-    'TelefonePrincipal',
-    'TelefoneSecundario',
-    'Status',
-    'IdadeEmpresa',
-    'Municipio',
-    'UF',
-    'CNAE',
-    'DescricaoCNAE',
-    'Socios',
-    'ProdutoSugerido',
-    'UltimoContato',
-    'MotivoDescarte',
-    'Notas',
+    'CNPJ', 'RazaoSocial', 'NomeFantasia', 'ResponsavelLead', 'TelefonePrincipal',
+    'TelefoneSecundario', 'Status', 'IdadeEmpresa', 'Municipio', 'UF', 'CNAE',
+    'DescricaoCNAE', 'Socios', 'ProdutoSugerido', 'UltimoContato', 'MotivoDescarte', 'Notas',
   ];
 
   const linhas = leads.map((lead) => {
