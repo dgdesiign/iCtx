@@ -1,4 +1,3 @@
-import { initializeApp } from "firebase/app";
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -11,17 +10,8 @@ import {
   UserCredential,
   browserPopupRedirectResolver
 } from "firebase/auth";
+import { app } from './firebase';
 
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: "gen-lang-client-0531276266.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: "gen-lang-client-0531276266.firebasestorage.app",
-  messagingSenderId: "549227667726",
-  appId: "1:549227667726:web:2a0297db9856e446c5f75f"
-};
-
-const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
 const SCOPES = [
@@ -59,7 +49,6 @@ export async function googleSignIn(): Promise<{ user: User; accessToken: string 
   SCOPES.forEach(scope => provider.addScope(scope));
 
   try {
-    // 1. Tenta POPUP primeiro (funciona no PC e na maioria dos celulares modernos)
     const result: UserCredential = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     
@@ -72,11 +61,10 @@ export async function googleSignIn(): Promise<{ user: User; accessToken: string 
   } catch (error: any) {
     console.warn("Popup falhou, tentando Redirect...", error);
     
-    // 2. Se o popup for bloqueado (celular), usa Redirect como fallback
     if (error.code === 'auth/popup-blocked' || error.code === 'auth/cancelled-popup-request' || error.code === 'auth/operation-not-supported-in-this-environment') {
       try {
         await signInWithRedirect(auth, provider);
-        return null; // Vai recarregar a página
+        return null;
       } catch (redirectError) {
         console.error("Erro no Redirect também:", redirectError);
         throw redirectError;
@@ -109,7 +97,6 @@ export function initAuth(
     }
   };
 
-  // Processa o redirect do mobile (se o usuário acabou de voltar do Google)
   getRedirectResult(auth)
     .then((result) => {
       if (result) {
@@ -121,12 +108,10 @@ export function initAuth(
     })
     .catch((error) => console.warn('Erro redirect:', error));
 
-  // Listener principal
   const unsubscribe = onAuthStateChanged(auth, (user) => {
     resolver(user);
   });
 
-  // TRAVA DE SEGURANÇA: Se em 5 segundos o Firebase não responder, destrava a tela
   const timeout = setTimeout(() => {
     if (!resolved) {
       console.warn('Timeout de autenticação atingido. Forçando estado.');
