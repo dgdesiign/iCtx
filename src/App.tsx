@@ -54,7 +54,6 @@ import {
   ouvirTemplatesTempoReal, salvarTemplatesNoFirestore,
 } from './services/firestoreService';
 
-// Base de sync para o Sheets (usada apenas na restauração manual)
 const carregarBaseSync = (): Record<string, string> => {
   try {
     const raw = localStorage.getItem('ictx_sync_base');
@@ -211,10 +210,11 @@ export default function App() {
   }, []);
 
   // =========================================================================
-  // FIRESTORE - LISTENER EM TEMPO REAL (Substitui o merge com Sheets)
+  // FIRESTORE - LISTENER EM TEMPO REAL
   // =========================================================================
   const lastSyncedHashesRef = useRef<Record<string, string>>({});
   const firestoreInitializedRef = useRef(false);
+  const isSyncingToFirestoreRef = useRef(false); // <--- TRAVA DE SEGURANÇA
 
   useEffect(() => {
     if (!currentUser) {
@@ -224,6 +224,9 @@ export default function App() {
     }
 
     const unsub = ouvirLeadsTempoReal((remoteLeads) => {
+      // Se estamos enviando dados para o Firestore, ignoramos o eco de volta
+      if (isSyncingToFirestoreRef.current) return;
+
       // Primeira snapshot após login: inicialização e migração
       if (!firestoreInitializedRef.current) {
         firestoreInitializedRef.current = true;
@@ -236,7 +239,10 @@ export default function App() {
             finalLeads = localLeads;
             if (localLeads.length > 0) {
               console.log(`[Firestore] Migrando ${localLeads.length} leads do LocalStorage para o Firestore.`);
-              salvarTodosLeadsNoFirestore(localLeads).catch(console.error);
+              isSyncingToFirestoreRef.current = true;
+              salvarTodosLeadsNoFirestore(localLeads)
+                .catch(console.error)
+                .finally(() => { isSyncingToFirestoreRef.current = false; });
             }
           } else if (localLeads.length === 0) {
             // LocalStorage vazio -> usa Firestore
@@ -258,7 +264,10 @@ export default function App() {
             finalLeads = Array.from(map.values());
 
             if (finalLeads.length > remoteLeads.length) {
-              salvarTodosLeadsNoFirestore(finalLeads).catch(console.error);
+              isSyncingToFirestoreRef.current = true;
+              salvarTodosLeadsNoFirestore(finalLeads)
+                .catch(console.error)
+                .finally(() => { isSyncingToFirestoreRef.current = false; });
             }
           }
 
@@ -294,6 +303,7 @@ export default function App() {
   // =========================================================================
   useEffect(() => {
     if (!currentUser || !firestoreInitializedRef.current) return;
+    if (isSyncingToFirestoreRef.current) return; // <--- TRAVA DE SEGURANÇA
 
     const timer = setTimeout(async () => {
       const currentHashes: Record<string, string> = {};
@@ -303,13 +313,12 @@ export default function App() {
       lastSyncedHashesRef.current = currentHashes;
 
       try {
-        // Salva apenas leads que mudaram
+        isSyncingToFirestoreRef.current = true; // Trava
         for (const lead of leads) {
           if (prevHashes[lead.id] !== currentHashes[lead.id]) {
             await salvarLeadNoFirestore(lead);
           }
         }
-        // Remove do Firestore os leads que sumiram da lista local
         for (const id of Object.keys(prevHashes)) {
           if (!currentHashes[id]) {
             await deletarLeadNoFirestore(id);
@@ -318,6 +327,8 @@ export default function App() {
       } catch (err) {
         console.error('[Firestore] Erro ao salvar. Revertendo estado de sync:', err);
         lastSyncedHashesRef.current = prevHashes;
+      } finally {
+        isSyncingToFirestoreRef.current = false; // Destrava
       }
     }, 1000);
 
@@ -344,7 +355,6 @@ export default function App() {
           setTemplates(remoteTemplates);
           lastSyncedTemplatesHashRef.current = JSON.stringify(remoteTemplates);
         } else {
-          // Firestore vazio: envia os templates locais
           salvarTemplatesNoFirestore(templates).catch(console.error);
           lastSyncedTemplatesHashRef.current = JSON.stringify(templates);
         }
@@ -372,18 +382,18 @@ export default function App() {
   }, [templates, currentUser]);
 
   // =========================================================================
-  // CACHE LOCALSTORAGE (Sempre salvando para funcionar offline)
+  // CACHE LOCALSTORAGE
   // =========================================================================
   useEffect(() => { salvarLeads(leads); }, [leads]);
   useEffect(() => { salvarTemplates(templates); }, [templates]);
 
   // =========================================================================
-  // FAXINEIRO DE DADOS (Roda uma vez após o Firestore carregar)
+  // FAXINEIRO DE DADOS
   // =========================================================================
   useEffect(() => {
     const MIGRATION_FLAG = 'ictx_migration_janitor_v2';
     if (localStorage.getItem(MIGRATION_FLAG) === 'true') return;
-    if (leads.length === 0) return; // Aguarda o Firestore carregar
+    if (leads.length === 0) return;
 
     let alterado = false;
 
@@ -609,12 +619,8 @@ export default function App() {
     setIsGoogleSyncing(true);
     try {
       const authResult = await googleSignIn();
-      if (!authResult) {
-        // Redirect em andamento (mobile)
-        return;
-      }
+      if (!authResult) return;
       setCurrentUser(authResult.user);
-      // Firestore listener já está ativo e vai carregar os dados sozinho
     } catch (err: any) {
       console.error('Erro Google:', err);
       throw err;
