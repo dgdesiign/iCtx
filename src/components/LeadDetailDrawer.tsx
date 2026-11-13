@@ -1,19 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import {
-  X, Building2, User, Phone, MapPin, FileText, Clock, Sparkles,
+  X, Building2, User, Phone, FileText, Clock, Sparkles,
   MessageCircle, PhoneCall, Save, CheckCircle2, Edit2, CreditCard,
-  QrCode, Copy, XCircle, ArrowLeft, ShieldAlert, ShieldCheck,
-  Landmark, Check, ChevronDown, TrendingUp, DollarSign, Link2, ExternalLink, Send, RefreshCw, AlertTriangle
+  QrCode, Copy, ArrowLeft, ShieldAlert, ShieldCheck,
+  Check, ChevronDown, AlertTriangle, RefreshCw, MapPin
 } from 'lucide-react';
 import { Lead, LeadStatus } from '../types/crm';
-import { CredenciamentoWizardModal } from './CredenciamentoWizardModal';
 import { COLUNAS_KANBAN } from './PipelineKanban';
-import { formatarNome, formatarTelefone, limparDigitos, consultarCnpj } from '../services/cnpjService';
+import { formatarTelefone } from '../services/cnpjService';
 import { obterInfoScore } from '../utils/scoring';
 import { 
-  definirPix, definirMaquinaVendas, registrarVendaMaquina, calcularAtivacaoStatus,
-  contaAtiva, maquinaAtiva, produtosVendidos, corrigirDataAtivacaoConta,
-  corrigirDataAtivacaoMaquina, definirFitEnergia, dataLocalISO
+  definirPix, definirMaquinaVendas, registrarVendaMaquina,
+  definirFitEnergia 
 } from '../utils/ativacao';
 import { formatarNomeEmpresa, formatarNomePessoa } from '../utils/formatacao';
 
@@ -38,15 +36,15 @@ const Section = ({ title, icon: Icon, children, defaultOpen = false, count }: an
 };
 
 // ============================================================================
-// TEMPLATES DO SNIPER (WHATSAPP) - ZERO EMOJIS
+// TEMPLATES DO SNIPER (WHATSAPP) - ESTILO APP ICONS (iOS)
 // ============================================================================
 const TEMPLATES_SNIPER = [
-  { id: 'visao_geral', titulo: 'Visão Geral', tag: '1º Contato', icone: 'MessageCircle', texto: `Oi {nome}, tudo joia? Vi aqui que você responde pela *{empresa}*, certo?\n\nSou o Douglas Krüger, represento o Banco Santander aqui na região em soluções e abertura de contas PJ. Tô te chamando rapidinho porque acompanho empresas com o perfil da {empresa} para avaliar a viabilidade de condições diferenciadas, como taxas competitivas e linhas de Pronampe. Vale a pena eu dar uma olhada rápida na viabilidade para a {empresa}?` },
-  { id: 'recuperacao', titulo: 'Recuperação', tag: 'Recontato', icone: 'RefreshCw', texto: `Oi {nome}, tudo bem?\n\nTentei falar com você anteriormente sobre as condições do Santander para a *{empresa}*. Conseguiu dar uma olhada na proposta ou prefere que eu te ligue em 1 minutinho para alinharmos?` },
-  { id: 'oferta_maquina', titulo: 'Máquina', tag: 'GetNet', icone: 'CreditCard', texto: `Oi {nome}, tudo bem? Sou o Douglas Krüger do Santander.\n\nMuitos empresários do setor da *{empresa}* estão buscando alternativas para reduzir os custos com taxas de maquininhas e cobranças à distância. Temos uma condição especial para a máquina GetNet / Fit Energia. Posso te enviar as taxas agora?` },
-  { id: 'fechamento', titulo: 'Fechamento', tag: 'Etapa Final', icone: 'CheckCircle2', texto: `Perfeito {nome}! Vamos avançar com o credenciamento e ativação da conta da *{empresa}*.\n\nO processo é 100% digital e rápido. Me confirma apenas se o CNPJ continua 100% regular para darmos o start?` },
-  { id: 'regional', titulo: 'Proximidade', tag: 'Regional', icone: 'MapPin', texto: `Oi {nome}, tudo bem? Sou o Douglas Krüger, consultor do Santander aqui na nossa região de {cidade}.\n\nPrecisava falar rapidamente com o responsável pela *{empresa}* sobre um pacote especial com isenção e linhas para o CNPJ de vocês. Você prefere que eu te ligue em 1 minutinho ou conversamos por aqui?` },
-  { id: 'objecao', titulo: 'Objeção', tag: 'Contorno', icone: 'ShieldAlert', texto: `Entendo perfeitamente {nome}, a maioria dos nossos parceiros já tinha relacionamento em outros bancos. Nossa intenção não é substituir seu banco principal agora, mas garantir que a *{empresa}* tenha uma segunda conta PJ sem custo fixo e com linhas de crédito abertas.` },
+  { id: 'visao_geral', titulo: 'Visão Geral', tag: '1º Contato', icone: 'MessageCircle', cor: 'from-blue-400 to-blue-600', texto: `Oi {nome}, tudo joia? Vi aqui que você responde pela *{empresa}*, certo?\n\nSou o Douglas Krüger, represento o Banco Santander aqui na região em soluções e abertura de contas PJ. Tô te chamando rapidinho porque acompanho empresas com o perfil da {empresa} para avaliar a viabilidade de condições diferenciadas, como taxas competitivas e linhas de Pronampe. Vale a pena eu dar uma olhada rápida na viabilidade para a {empresa}?` },
+  { id: 'recuperacao', titulo: 'Recuperação', tag: 'Recontato', icone: 'RefreshCw', cor: 'from-amber-400 to-orange-500', texto: `Oi {nome}, tudo bem?\n\nTentei falar com você anteriormente sobre as condições do Santander para a *{empresa}*. Conseguiu dar uma olhada na proposta ou prefere que eu te ligue em 1 minutinho para alinharmos?` },
+  { id: 'oferta_maquina', titulo: 'Máquina', tag: 'GetNet', icone: 'CreditCard', cor: 'from-purple-500 to-indigo-600', texto: `Oi {nome}, tudo bem? Sou o Douglas Krüger do Santander.\n\nMuitos empresários do setor da *{empresa}* estão buscando alternativas para reduzir os custos com taxas de maquininhas e cobranças à distância. Temos uma condição especial para a máquina GetNet / Fit Energia. Posso te enviar as taxas agora?` },
+  { id: 'fechamento', titulo: 'Fechamento', tag: 'Etapa Final', icone: 'CheckCircle2', cor: 'from-emerald-400 to-teal-600', texto: `Perfeito {nome}! Vamos avançar com o credenciamento e ativação da conta da *{empresa}*.\n\nO processo é 100% digital e rápido. Me confirma apenas se o CNPJ continua 100% regular para darmos o start?` },
+  { id: 'regional', titulo: 'Proximidade', tag: 'Regional', icone: 'MapPin', cor: 'from-rose-400 to-red-600', texto: `Oi {nome}, tudo bem? Sou o Douglas Krüger, consultor do Santander aqui na nossa região de {cidade}.\n\nPrecisava falar rapidamente com o responsável pela *{empresa}* sobre um pacote especial com isenção e linhas para o CNPJ de vocês. Você prefere que eu te ligue em 1 minutinho ou conversamos por aqui?` },
+  { id: 'objecao', titulo: 'Objeção', tag: 'Contorno', icone: 'ShieldAlert', cor: 'from-slate-500 to-slate-700', texto: `Entendo perfeitamente {nome}, a maioria dos nossos parceiros já tinha relacionamento em outros bancos. Nossa intenção não é substituir seu banco principal agora, mas garantir que a *{empresa}* tenha uma segunda conta PJ sem custo fixo e com linhas de crédito abertas.` },
 ];
 
 // ============================================================================
@@ -100,8 +98,6 @@ export const LeadDetailDrawer: React.FC<any> = ({ lead, isOpen, onClose, onUpdat
   const [editEmpresa, setEditEmpresa] = useState(lead?.empresaExibicao || '');
   
   const [tabAtiva, setTabAtiva] = useState<'whatsapp' | 'ligacao' | 'dossie' | 'pos_venda'>('dossie');
-  const [bloqueioAtivo, setBloqueioAtivo] = useState(false);
-  const [motivoBloqueio, setMotivoBloqueio] = useState('Já indicado por outro parceiro');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const [templateAtivo, setTemplateAtivo] = useState<any>(null);
@@ -164,7 +160,7 @@ export const LeadDetailDrawer: React.FC<any> = ({ lead, isOpen, onClose, onUpdat
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 mb-1 flex-wrap">
                 {scoreInfo && <span className={`text-[10px] px-2 py-0.5 rounded border shrink-0 font-bold ${scoreInfo.badgeStyle}`}>Score {scoreInfo.score}/100</span>}
-                <span className="text-xs text-slate-500 font-mono truncate">{lead.cnpjFormatado}</span>
+                <span className="text-xs text-slate-500 font-mono truncate">{lead.cnpjFormatado || lead.cnpj}</span>
               </div>
               <h2 className="text-lg font-bold text-slate-900 truncate leading-tight">{formatarNomeEmpresa(lead.empresaExibicao)}</h2>
               <p className="text-xs text-slate-500 truncate mt-0.5">{formatarNomePessoa(lead.nomeContato)} · {lead.municipio}</p>
@@ -181,7 +177,7 @@ export const LeadDetailDrawer: React.FC<any> = ({ lead, isOpen, onClose, onUpdat
 
         <div className="px-4 py-2 bg-white border-b border-slate-200 flex flex-col gap-2 flex-shrink-0">
           <div className="flex items-center justify-between gap-2">
-            <select value={lead.status} onChange={(e) => onUpdateStatus(lead.id, e.target.value as LeadStatus)} className="text-xs font-bold border border-slate-300 rounded-lg px-2.5 py-1.5 bg-slate-50 focus:ring-2 focus:ring-slate-200 flex-1">
+            <select value={lead.status} onChange={(e) => onUpdateStatus(lead.id, e.target.value as LeadStatus)} className="text-xs font-bold border border-slate-300 rounded-lg px-2.5 py-1.5 bg-slate-50 focus:ring-2 focus:ring-slate-200 flex-1 cursor-pointer">
               {COLUNAS_KANBAN.map((col) => <option key={col.id} value={col.id}>{col.titulo}</option>)}
             </select>
             <button onClick={() => onOpenCoach(lead)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg cursor-pointer shrink-0">
@@ -206,7 +202,7 @@ export const LeadDetailDrawer: React.FC<any> = ({ lead, isOpen, onClose, onUpdat
             if (tab.hide) return null;
             const isAtiva = tabAtiva === tab.id;
             return (
-              <button key={tab.id} onClick={() => setTabAtiva(tab.id as any)} className={`flex-1 min-w-[90px] py-3 px-2 text-xs font-semibold flex items-center justify-center gap-1.5 border-b-2 transition-colors cursor-pointer whitespace-nowrap snap-start ${isAtiva ? 'border-slate-800 text-slate-900 bg-slate-50' : 'border-transparent text-slate-500'}`}>
+              <button key={tab.id} onClick={() => setTabAtiva(tab.id as any)} className={`flex-1 min-w-[100px] py-3 px-2 text-xs font-semibold flex items-center justify-center gap-1.5 border-b-2 transition-colors cursor-pointer whitespace-nowrap snap-start ${isAtiva ? 'border-slate-800 text-slate-900 bg-slate-50' : 'border-transparent text-slate-500'}`}>
                 <tab.icon className={`w-4 h-4 ${isAtiva ? 'text-slate-800' : 'text-slate-400'}`} /> {tab.label}
               </button>
             )
@@ -219,18 +215,18 @@ export const LeadDetailDrawer: React.FC<any> = ({ lead, isOpen, onClose, onUpdat
             <div className="animate-in fade-in">
               {!templateAtivo ? (
                 <>
-                  <p className="text-[11px] text-slate-500 mb-2 font-medium">Selecione um gatilho Sniper:</p>
-                  <div className="grid grid-cols-3 gap-2.5">
+                  <p className="text-[11px] text-slate-500 mb-3 font-medium text-center">Selecione um gatilho Sniper:</p>
+                  <div className="grid grid-cols-3 gap-y-4 gap-x-2 px-1">
                     {TEMPLATES_SNIPER.map(tpl => (
                       <button key={tpl.id} onClick={() => {
                         setTemplateAtivo(tpl);
                         if (onRegistrarAcaoContato) onRegistrarAcaoContato(lead.id, 'whatsapp', tpl.titulo);
-                      }} className="flex flex-col items-center justify-center p-2 bg-white border border-slate-200 rounded-2xl hover:border-emerald-400 active:scale-95 transition-all cursor-pointer aspect-square shadow-2xs">
-                        <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600 mb-1.5">
-                          <SniperIcon name={tpl.icone} className="w-5 h-5" />
+                      }} className="flex flex-col items-center justify-center p-1 bg-transparent hover:opacity-80 active:scale-95 transition-all cursor-pointer">
+                        <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${tpl.cor} shadow-md flex items-center justify-center text-white mb-2`}>
+                          <SniperIcon name={tpl.icone} className="w-6 h-6" />
                         </div>
-                        <span className="text-[10px] font-bold text-slate-800 text-center leading-tight">{tpl.titulo}</span>
-                        <span className="text-[8px] text-slate-400 mt-0.5">{tpl.tag}</span>
+                        <span className="text-[11px] font-bold text-slate-800 text-center leading-tight">{tpl.titulo}</span>
+                        <span className="text-[9px] text-slate-500 mt-0.5">{tpl.tag}</span>
                       </button>
                     ))}
                   </div>
@@ -311,27 +307,27 @@ export const LeadDetailDrawer: React.FC<any> = ({ lead, isOpen, onClose, onUpdat
                   const nova = Math.min(3, atual + 1) as 0|1|2|3;
                   onUpdateLead({ ...lead, cadenciaContatos: nova });
                   mostrarToast(`Tentativa ${nova}/3!`);
-                }} className="w-full py-2 bg-blue-600 text-white text-xs font-bold rounded-lg">+ Registrar Tentativa</button>
+                }} className="w-full py-2 bg-blue-600 text-white text-xs font-bold rounded-lg cursor-pointer">+ Registrar Tentativa</button>
               </div>
 
               <div className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 font-bold text-xs text-slate-900"><Phone className="w-4 h-4 text-slate-500" /> Contatos</div>
-                  <button onClick={() => setEditando(!editando)} className="text-[10px] font-bold text-red-600"><Edit2 className="w-3 h-3 inline" /> {editando ? 'Cancelar' : 'Editar'}</button>
+                  <button onClick={() => setEditando(!editando)} className="text-[10px] font-bold text-red-600 cursor-pointer"><Edit2 className="w-3 h-3 inline" /> {editando ? 'Cancelar' : 'Editar'}</button>
                 </div>
                 {editando ? (
                   <div className="space-y-2">
                     <input value={editNome} onChange={e => setEditNome(e.target.value)} className="w-full text-xs p-2 border rounded-lg" placeholder="Nome" />
                     <input value={editTelefone} onChange={e => setEditTelefone(e.target.value)} className="w-full text-xs p-2 border rounded-lg font-mono" placeholder="Telefone" />
                     <input value={editEmpresa} onChange={e => setEditEmpresa(e.target.value)} className="w-full text-xs p-2 border rounded-lg" placeholder="Empresa" />
-                    <button onClick={() => { onUpdateLead({ ...lead, nomeContato: editNome, telefonePrincipal: editTelefone, empresaExibicao: editEmpresa }); setEditando(false); mostrarToast('Salvo!'); }} className="w-full py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg">Salvar</button>
+                    <button onClick={() => { onUpdateLead({ ...lead, nomeContato: editNome, telefonePrincipal: editTelefone, empresaExibicao: editEmpresa }); setEditando(false); mostrarToast('Salvo!'); }} className="w-full py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg cursor-pointer">Salvar</button>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                     <div><span className="text-[9px] uppercase font-bold text-slate-400 block">Telefone</span><strong className="text-slate-900 font-mono text-sm">{telefoneValor || 'Sem telefone'}</strong></div>
                     <div className="flex gap-1">
-                      <button onClick={() => onOpenCallScript(lead)} className="p-1.5 text-blue-600 bg-blue-100 rounded-lg"><PhoneCall className="w-4 h-4" /></button>
-                      <button onClick={() => onOpenMessageComposer(lead)} className="p-1.5 text-emerald-600 bg-emerald-100 rounded-lg"><MessageCircle className="w-4 h-4" /></button>
+                      <button onClick={() => onOpenCallScript(lead)} className="p-1.5 text-blue-600 bg-blue-100 rounded-lg cursor-pointer"><PhoneCall className="w-4 h-4" /></button>
+                      <button onClick={() => onOpenMessageComposer(lead)} className="p-1.5 text-emerald-600 bg-emerald-100 rounded-lg cursor-pointer"><MessageCircle className="w-4 h-4" /></button>
                     </div>
                   </div>
                 )}
@@ -342,7 +338,7 @@ export const LeadDetailDrawer: React.FC<any> = ({ lead, isOpen, onClose, onUpdat
                   {[ {l:'CNPJ', v:cnpjValor}, {l:'Nome', v:nomeValor}, {l:'Razão Social', v:razaoValor}, {l:'Telefone', v:telefoneValor}, {l:'Endereço', v:enderecoCompleto} ].map((i, idx) => (
                     <div key={idx} className="flex justify-between items-center bg-slate-50 p-2 rounded">
                       <div><span className="text-[9px] text-slate-400 block">{i.l}</span><span className="text-slate-800">{i.v || '-'}</span></div>
-                      <button onClick={() => handleCopy(i.v, i.l)} className="text-slate-400"><Copy className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => handleCopy(i.v, i.l)} className="text-slate-400 cursor-pointer"><Copy className="w-3.5 h-3.5" /></button>
                     </div>
                   ))}
                 </div>
@@ -358,12 +354,12 @@ export const LeadDetailDrawer: React.FC<any> = ({ lead, isOpen, onClose, onUpdat
 
               <Section title="Notas do Vendedor" icon={FileText}>
                 <textarea rows={3} value={notas} onChange={e => setNotas(e.target.value)} className="w-full text-xs p-2 border border-slate-300 rounded-lg" placeholder="Anotações..." />
-                <button onClick={() => { onSaveNotas(lead.id, notas); onUpdateLead({...lead, notas}); mostrarToast('Nota salva!'); }} className="mt-2 w-full py-1.5 bg-slate-900 text-white text-xs font-bold rounded-lg">Salvar Nota</button>
+                <button onClick={() => { onSaveNotas(lead.id, notas); onUpdateLead({...lead, notas}); mostrarToast('Nota salva!'); }} className="mt-2 w-full py-1.5 bg-slate-900 text-white text-xs font-bold rounded-lg cursor-pointer">Salvar Nota</button>
               </Section>
 
               <Section title="Histórico de Contatos" icon={Clock} count={lead.historicoContatos?.length || 0}>
                 {lead.historicoContatos?.length === 0 ? <p className="text-xs text-slate-400 italic">Nenhuma interação.</p> : (
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                  <div className="space-y-2 max-h-48 overflow-y-auto no-scrollbar">
                     {lead.historicoContatos.map((h: any, i: number) => (
                       <div key={i} className="text-[11px] bg-slate-50 p-2 rounded border border-slate-100">
                         <div className="flex justify-between font-bold text-slate-800"><span>{h.tipo}</span><span className="text-[9px] text-slate-400">{new Date(h.dataHora).toLocaleString('pt-BR')}</span></div>
@@ -377,7 +373,80 @@ export const LeadDetailDrawer: React.FC<any> = ({ lead, isOpen, onClose, onUpdat
           )}
 
           {tabAtiva === 'pos_venda' && lead.status === 'fechado' && (
-            <div className="text-center p-6 text-slate-500 text-sm">Interface de Pós-Venda mantida (Ativação PIX e Máquina).</div>
+            <div className="space-y-3 animate-in fade-in">
+              <Section title="POS & Adquirência (GetNet)" icon={CreditCard} defaultOpen={true}>
+                <div className="space-y-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase">Modelo POS</label>
+                      <select value={lead.modeloPos || 'POS 3G'} onChange={(e) => onUpdateLead({ ...lead, modeloPos: e.target.value })} className="w-full text-xs p-2.5 border border-slate-300 rounded-lg mt-1 bg-white">
+                        <option>POS 3G</option>
+                        <option>POS 4G</option>
+                        <option>Smart POS</option>
+                        <option>TEF</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase">Status Logística</label>
+                      <select value={lead.statusLogistica || 'Não Solicitado'} onChange={(e) => onUpdateLead({ ...lead, statusLogistica: e.target.value })} className="w-full text-xs p-2.5 border border-slate-300 rounded-lg mt-1 bg-white">
+                        <option>Não Solicitado</option>
+                        <option>Solicitado</option>
+                        <option>Em Trânsito</option>
+                        <option>Entregue</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                      <input type="checkbox" checked={lead.completudeCadastral || false} onChange={(e) => onUpdateLead({ ...lead, completudeCadastral: e.target.checked })} id="completude" className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+                      <label htmlFor="completude" className="text-[11px] font-bold text-slate-700">Completude Cadastral no App (Selfie + CNH)</label>
+                    </div>
+                </div>
+              </Section>
+
+              <Section title="Ativação Operacional" icon={CheckCircle2} defaultOpen={true}>
+                <div className="space-y-4">
+                  {/* PIX */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className="text-[11px] font-bold text-slate-700">Chaves PIX ({lead.pixCount || 0}/3)</label>
+                      {(lead.pixCount || 0) >= 3 && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">Meta Atingida</span>}
+                    </div>
+                    <div className="flex gap-1">
+                      {[0, 1, 2, 3].map((num) => (
+                        <button key={num} onClick={() => onUpdateLead(definirPix(lead, num))} className={`flex-1 py-1.5 text-xs font-bold rounded-lg border cursor-pointer ${(lead.pixCount || 0) === num ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-200'}`}>
+                          {num}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* MÁQUINA */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className="text-[11px] font-bold text-slate-700">Vendas Máq (R$ {lead.maquinaVendas || 0})</label>
+                      {(lead.maquinaVendas || 0) >= 500 && <span className="text-[9px] font-bold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">Meta R$500</span>}
+                    </div>
+                    <div className="flex gap-1">
+                      <button onClick={() => onUpdateLead(registrarVendaMaquina(lead, 100))} className="flex-1 py-1.5 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 cursor-pointer">+R$ 100</button>
+                      <button onClick={() => onUpdateLead(definirMaquinaVendas(lead, 500))} className={`flex-1 py-1.5 text-xs font-bold rounded-lg border cursor-pointer ${(lead.maquinaVendas || 0) >= 500 ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-emerald-600 bg-white text-emerald-700'}`}>R$ 500</button>
+                      <button onClick={() => onUpdateLead(definirMaquinaVendas(lead, 0))} className="flex-1 py-1.5 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 cursor-pointer">Zerar</button>
+                    </div>
+                  </div>
+
+                  {/* FIT ENERGIA */}
+                  <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                    <span className="text-[11px] font-bold text-slate-700">Fit Energia</span>
+                    <button onClick={() => onUpdateLead(definirFitEnergia(lead, !lead.fitEnergia))} className={`px-3 py-1 text-[10px] font-bold rounded-lg border cursor-pointer ${lead.fitEnergia ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-300'}`}>
+                       {lead.fitEnergia ? 'ATIVO' : 'INATIVO'}
+                    </button>
+                  </div>
+
+                  <button onClick={() => { onSaveNotas(lead.id, notas); onUpdateLead(lead); mostrarToast('Dados de Pós-Venda Salvos!'); }} className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm mt-2 flex items-center justify-center gap-1.5 cursor-pointer transition-colors">
+                    <Save className="w-4 h-4" /> Salvar Dados de Pós-Venda
+                  </button>
+                </div>
+              </Section>
+            </div>
           )}
 
         </div>
