@@ -2,28 +2,28 @@ import fs from 'fs';
 import ExcelJS from 'exceljs';
 
 async function run() {
-  console.log("🤖 Acordando o minerador...");
+  console.log("[MINERADOR] Iniciando processo de mineração de CNPJs...");
 
   const API_KEY = process.env.CASADOSDADOS_API_KEY;
-  if (!API_KEY) throw new Error("Chave da API não configurada!");
+  if (!API_KEY) throw new Error("[ERRO] Chave da API nao configurada!");
 
   // GARANTE QUE A PASTA EXISTE
   if (!fs.existsSync('./cartuchos')) {
     fs.mkdirSync('./cartuchos');
     fs.writeFileSync('./cartuchos/.gitkeep', '');
-    console.log("📁 Pasta 'cartuchos' criada.");
+    console.log("[SISTEMA] Pasta 'cartuchos' criada com sucesso.");
   }
 
   const alvos = JSON.parse(fs.readFileSync('./bot/alvos.json', 'utf8'));
   let progresso = JSON.parse(fs.readFileSync('./bot/progresso.json', 'utf8'));
 
-  console.log(`📊 Status: Índice atual ${progresso.ultimoIndex} de ${alvos.length} alvos.`);
+  console.log(`[STATUS] Indice atual: ${progresso.ultimoIndex} de ${alvos.length} alvos.`);
 
   let leads = new Set();
   let index = progresso.ultimoIndex;
 
   if (index >= alvos.length) {
-    console.log("✅ Todos os alvos já foram minerados!");
+    console.log("[AVISO] Todos os alvos ja foram minerados. Nenhuma acao necessaria.");
     return;
   }
 
@@ -31,7 +31,7 @@ async function run() {
 
   while (leads.size < LIMITE_CARTUCHO && index < alvos.length) {
     const alvo = alvos[index];
-    console.log(`Buscando: ${alvo.bairro} - ${alvo.municipio} | CNAE: ${alvo.cnae} (Total atual: ${leads.size})`);
+    console.log(`[BUSCA] Bairro: ${alvo.bairro} | Municipio: ${alvo.municipio} | CNAE: ${alvo.cnae} (Total atual: ${leads.size})`);
 
     try {
       const response = await fetch('https://api.casadosdados.com.br/v5/public/cnpj/pesquisa', {
@@ -62,31 +62,32 @@ async function run() {
             }
           }
           
-          console.log(`   -> Retorno da API: ${empresas.length} empresas. Total: ${leads.size}`);
+          console.log(`[RETORNO] API retornou ${empresas.length} empresas. Total acumulado: ${leads.size}`);
         } catch (e) {
-          console.log(`   -> Erro ao ler JSON. Resposta: ${rawText.substring(0, 200)}`);
+          console.log(`[ERRO JSON] Falha ao ler JSON. Resposta da API: ${rawText.substring(0, 200)}`);
         }
       } else {
-        console.log(`   -> ERRO HTTP ${response.status}. Resposta: ${rawText}`);
+        console.log(`[ERRO HTTP] Status ${response.status}. Resposta: ${rawText}`);
       }
     } catch (error) {
-      console.error(`   -> Erro na busca de ${alvo.bairro}:`, error.message);
+      console.error(`[ERRO FETCH] Falha na busca do bairro ${alvo.bairro}:`, error.message);
     }
 
     index++; 
     
     if (leads.size >= LIMITE_CARTUCHO) {
-      console.log("🛑 Limite de 300 leads atingido. Parando mineração.");
+      console.log("[LIMITE] Limite de 300 leads atingido. Parando mineracao.");
       break; 
     }
 
+    // Pausa de 2 segundos para evitar bloqueio da API
     await new Promise(r => setTimeout(r, 2000));
   }
 
   progresso.ultimoIndex = index;
   fs.writeFileSync('./bot/progresso.json', JSON.stringify(progresso, null, 2));
 
-  console.log(`📦 Gerando cartucho com ${leads.size} leads...`);
+  console.log(`[GERACAO] Gerando arquivo Excel com ${leads.size} leads...`);
   
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Leads AK');
@@ -102,7 +103,10 @@ async function run() {
   const nomeArquivo = `cartucho_${dataStr}_${leads.size}leads.xlsx`;
 
   await workbook.xlsx.writeFile(`./cartuchos/${nomeArquivo}`);
-  console.log(`✅ Sucesso! Arquivo cartuchos/${nomeArquivo} criado.`);
+  console.log(`[SUCESSO] Arquivo criado: cartuchos/${nomeArquivo}`);
 }
 
-run().catch(console.error);
+run().catch(err => {
+  console.error("[ERRO FATAL] O minerador falhou inesperadamente:", err);
+  process.exit(1);
+});
