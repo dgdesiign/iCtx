@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   carregarLeads, salvarLeads, carregarTemplates, salvarTemplates,
-  exportarLeadsCsv, aplicarMudancaStatusCadencia,
+  aplicarMudancaStatusCadencia,
 } from './utils/storage';
 import { mergeLeads3, hashLead, isSampleLeadId } from './utils/syncMerge';
 import { Lead, LeadStatus, MessageTemplate, EquipeMembro } from './types/crm';
@@ -36,10 +36,7 @@ import { getNotificationPermissionStatus, setupDaily9AmReminder, NotificationSta
 import { Loader2 } from 'lucide-react';
 import {
   autocorrigeLead,
-  formatarCnpj,
-  formatarNome,
   formatarTelefone,
-  limparCnpj,
   limparDigitos,
   consultarCnpj,
 } from './services/cnpjService';
@@ -49,9 +46,15 @@ import {
 } from './services/googleAuthService';
 import {
   findOrCreateSpreadsheet, fetchLeadsFromSheet, saveAllLeadsToSheet,
-  appendContactLogToSheet, SpreadsheetInfo,
+  SpreadsheetInfo,
 } from './services/googleSheetsService';
+import {
+  ouvirLeadsTempoReal, salvarLeadNoFirestore, deletarLeadNoFirestore,
+  salvarTodosLeadsNoFirestore,
+  ouvirTemplatesTempoReal, salvarTemplatesNoFirestore,
+} from './services/firestoreService';
 
+// Base de sync para o Sheets (usada apenas na restauração manual)
 const carregarBaseSync = (): Record<string, string> => {
   try {
     const raw = localStorage.getItem('ictx_sync_base');
@@ -189,77 +192,206 @@ export default function App() {
     if (spreadsheet) localStorage.setItem('ictx_google_spreadsheet', JSON.stringify(spreadsheet));
   }, [spreadsheet]);
 
-  async function executarComRetry(fn: () => Promise<void>): Promise<void> {
-    try { await fn(); }
-    catch (e: any) {
-      if (e?.message !== 'TOKEN_EXPIRADO') throw e;
-    }
-  }
-
-  const isInitialMountRef = useRef(true);
-  const isLoadingFromSheetRef = useRef(false);
-  const isSavingToSheetRef = useRef(false);
-  const firstMergeDoneRef = useRef(false);
-  const pendingSaveLeadsRef = useRef<Lead[] | null>(null);
-
+  // =========================================================================
+  // AUTENTICAÇÃO (Firebase Auth)
+  // =========================================================================
   useEffect(() => {
     const unsubscribe = initAuth(
-      async (user, token) => {
+      (user, token) => {
         setCurrentUser(user);
         if (token) setCachedAccessToken(token);
         setIsAuthChecking(false);
-        
-        if (token && !firstMergeDoneRef.current && spreadsheet?.id) {
-          try {
-            setIsGoogleSyncing(true);
-            isLoadingFromSheetRef.current = true;
-            const leadsRemotos = await fetchLeadsFromSheet(spreadsheet.id, token);
-            const base = carregarBaseSync();
-            let listaMerged: Lead[] = [];
-            setLeads((locaisAtuais) => {
-              const { merged } = mergeLeads3(locaisAtuais, leadsRemotos, base);
-              listaMerged = merged;
-              return merged;
-            });
-            if (listaMerged.length > 0) {
-              await saveAllLeadsToSheet(spreadsheet.id, listaMerged, token);
-              salvarBaseSync(listaMerged);
-            }
-            firstMergeDoneRef.current = true;
-            const agora = new Date().toISOString();
-            setLastSyncTime(agora);
-            localStorage.setItem('ictx_last_sync_time', agora);
-          } catch (err) { console.warn('Erro merge:', err); }
-          finally { isLoadingFromSheetRef.current = false; setIsGoogleSyncing(false); }
-        }
       },
-      () => { setCurrentUser(null); firstMergeDoneRef.current = false; setIsAuthChecking(false); }
+      () => {
+        setCurrentUser(null);
+        setIsAuthChecking(false);
+      }
     );
     return () => unsubscribe();
-  }, [spreadsheet?.id]);
-
-  const [leadParaMensagem, setLeadParaMensagem] = useState<Lead | null>(null);
-  const [leadParaLigacao, setLeadParaLigacao] = useState<Lead | null>(null);
-  const [leadParaDetalhes, setLeadParaDetalhes] = useState<Lead | null>(null);
-  const [leadParaCoach, setLeadParaCoach] = useState<Lead | null>(null);
-
-  useEffect(() => { salvarLeads(leads); }, [leads]);
+  }, []);
 
   // =========================================================================
-  // O FAXINEIRO DE DADOS (Roda apenas 1 vez no primeiro carregamento)
+  // FIRESTORE - LISTENER EM TEMPO REAL (Substitui o merge com Sheets)
+  // =========================================================================
+  const lastSyncedHashesRef = useRef<Record<string, string>>({});
+  const firestoreInitializedRef = useRef(false);
+
+  useEffect(() => {
+    if (!currentUser) {
+      firestoreInitializedRef.current = false;
+      lastSyncedHashesRef.current = {};
+      return;
+    }
+
+    const unsub = ouvirLeadsTempoReal((remoteLeads) => {
+      // Primeira snapshot após login: inicialização e migração
+      if (!firestoreInitializedRef.current) {
+        firestoreInitializedRef.current = true;
+
+        setLeads((localLeads) => {
+          let finalLeads: Lead[];
+
+          if (remoteLeads.length === 0) {
+            // Firestore vazio -> migra LocalStorage para Firestore
+            finalLeads = localLeads;
+            if (localLeads.length > 0) {
+              console.log(`[Firestore] Migrando ${localLeads.length} leads do LocalStorage para o Firestore.`);
+              salvarTodosLeadsNoFirestore(localLeads).catch(console.error);
+            }
+          } else if (localLeads.length === 0) {
+            // LocalStorage vazio -> usa Firestore
+            finalLeads = remoteLeads;
+          } else {
+            // Ambos têm dados -> merge inteligente (prefere o mais recente)
+            const map = new Map<string, Lead>();
+            for (const l of localLeads) map.set(l.id, l);
+            for (const l of remoteLeads) {
+              const existing = map.get(l.id);
+              if (!existing) {
+                map.set(l.id, l);
+              } else {
+                const localTime = new Date(existing.atualizadoEm || existing.criadoEm || 0).getTime();
+                const remoteTime = new Date(l.atualizadoEm || l.criadoEm || 0).getTime();
+                map.set(l.id, remoteTime >= localTime ? l : existing);
+              }
+            }
+            finalLeads = Array.from(map.values());
+
+            if (finalLeads.length > remoteLeads.length) {
+              salvarTodosLeadsNoFirestore(finalLeads).catch(console.error);
+            }
+          }
+
+          const hashes: Record<string, string> = {};
+          for (const l of finalLeads) hashes[l.id] = hashLead(l);
+          lastSyncedHashesRef.current = hashes;
+
+          return finalLeads;
+        });
+        return;
+      }
+
+      // Snapshots subsequentes: verifica se houve mudança real (de outro dispositivo)
+      const remoteHashes: Record<string, string> = {};
+      for (const l of remoteLeads) remoteHashes[l.id] = hashLead(l);
+
+      const hasChanges =
+        Object.keys(remoteHashes).some((id) => lastSyncedHashesRef.current[id] !== remoteHashes[id]) ||
+        Object.keys(lastSyncedHashesRef.current).some((id) => !remoteHashes[id]);
+
+      if (hasChanges) {
+        console.log('[Firestore] Mudança detectada em outro dispositivo. Sincronizando...');
+        setLeads(remoteLeads);
+        lastSyncedHashesRef.current = remoteHashes;
+      }
+    });
+
+    return () => unsub();
+  }, [currentUser]);
+
+  // =========================================================================
+  // FIRESTORE - SALVAMENTO DEBOUNCED (Salva só o que mudou, após 1s)
   // =========================================================================
   useEffect(() => {
-    const MIGRATION_FLAG = 'ictx_migration_janitor_v1';
+    if (!currentUser || !firestoreInitializedRef.current) return;
+
+    const timer = setTimeout(async () => {
+      const currentHashes: Record<string, string> = {};
+      for (const l of leads) currentHashes[l.id] = hashLead(l);
+
+      const prevHashes = { ...lastSyncedHashesRef.current };
+      lastSyncedHashesRef.current = currentHashes;
+
+      try {
+        // Salva apenas leads que mudaram
+        for (const lead of leads) {
+          if (prevHashes[lead.id] !== currentHashes[lead.id]) {
+            await salvarLeadNoFirestore(lead);
+          }
+        }
+        // Remove do Firestore os leads que sumiram da lista local
+        for (const id of Object.keys(prevHashes)) {
+          if (!currentHashes[id]) {
+            await deletarLeadNoFirestore(id);
+          }
+        }
+      } catch (err) {
+        console.error('[Firestore] Erro ao salvar. Revertendo estado de sync:', err);
+        lastSyncedHashesRef.current = prevHashes;
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [leads, currentUser]);
+
+  // =========================================================================
+  // FIRESTORE - TEMPLATES (Tempo real)
+  // =========================================================================
+  const templatesInitializedRef = useRef(false);
+  const lastSyncedTemplatesHashRef = useRef<string>('');
+
+  useEffect(() => {
+    if (!currentUser) {
+      templatesInitializedRef.current = false;
+      lastSyncedTemplatesHashRef.current = '';
+      return;
+    }
+
+    const unsub = ouvirTemplatesTempoReal((remoteTemplates) => {
+      if (!templatesInitializedRef.current) {
+        templatesInitializedRef.current = true;
+        if (remoteTemplates.length > 0) {
+          setTemplates(remoteTemplates);
+          lastSyncedTemplatesHashRef.current = JSON.stringify(remoteTemplates);
+        } else {
+          // Firestore vazio: envia os templates locais
+          salvarTemplatesNoFirestore(templates).catch(console.error);
+          lastSyncedTemplatesHashRef.current = JSON.stringify(templates);
+        }
+        return;
+      }
+      const remoteHash = JSON.stringify(remoteTemplates);
+      if (remoteHash !== lastSyncedTemplatesHashRef.current) {
+        setTemplates(remoteTemplates);
+        lastSyncedTemplatesHashRef.current = remoteHash;
+      }
+    });
+
+    return () => unsub();
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser || !templatesInitializedRef.current) return;
+    const timer = setTimeout(() => {
+      const hash = JSON.stringify(templates);
+      if (lastSyncedTemplatesHashRef.current === hash) return;
+      lastSyncedTemplatesHashRef.current = hash;
+      salvarTemplatesNoFirestore(templates).catch(console.error);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [templates, currentUser]);
+
+  // =========================================================================
+  // CACHE LOCALSTORAGE (Sempre salvando para funcionar offline)
+  // =========================================================================
+  useEffect(() => { salvarLeads(leads); }, [leads]);
+  useEffect(() => { salvarTemplates(templates); }, [templates]);
+
+  // =========================================================================
+  // FAXINEIRO DE DADOS (Roda uma vez após o Firestore carregar)
+  // =========================================================================
+  useEffect(() => {
+    const MIGRATION_FLAG = 'ictx_migration_janitor_v2';
     if (localStorage.getItem(MIGRATION_FLAG) === 'true') return;
+    if (leads.length === 0) return; // Aguarda o Firestore carregar
 
     let alterado = false;
-    
+
     const leadsLimpos = leads.map((lead) => {
       let mudou = false;
       const leadAtualizado = { ...lead };
       const nomesInvalidos = ['sim sucesso', 'sim', 'sucesso', 'não cnpj invalido', 'nao cnpj invalido', 'não', 'nao'];
 
-      // 1. Consertar Nomes
       if (leadAtualizado.nomeContato && nomesInvalidos.includes(leadAtualizado.nomeContato.toLowerCase().trim())) {
         leadAtualizado.nomeContato = 'Consultar Receita';
         mudou = true;
@@ -269,7 +401,6 @@ export default function App() {
         mudou = true;
       }
 
-      // 2. Consertar Telefones
       const limparTelefone = (tel: string | undefined): string => {
         if (!tel) return '';
         const limpo = tel.replace(/\D/g, '');
@@ -294,7 +425,6 @@ export default function App() {
         mudou = true;
       }
 
-      // 3. Consertar Follow-up corrompido
       if (leadAtualizado.proximoFollowUp && leadAtualizado.proximoFollowUp.trim() === '') {
         leadAtualizado.proximoFollowUp = undefined;
         mudou = true;
@@ -309,43 +439,20 @@ export default function App() {
 
     if (alterado) {
       setLeads(leadsLimpos);
-      salvarLeads(leadsLimpos);
-      console.log('[Faxineiro] Base limpa: Nomes e Telefones corrigidos.');
-      alert('Base de dados otimizada com sucesso!\n\nNomes "Sim Sucesso" e telefones corrompidos foram consertados.');
+      console.log('[Faxineiro] Base limpa: nomes e telefones corrigidos.');
+      alert('Base de dados otimizada com sucesso.\n\nNomes "Sim Sucesso" e telefones corrompidos foram consertados.');
     }
-    
+
     localStorage.setItem(MIGRATION_FLAG, 'true');
-  }, []); // Roda só no mount
+  }, [leads]);
+
   // =========================================================================
-
-  useEffect(() => {
-    if (isInitialMountRef.current) { isInitialMountRef.current = false; return; }
-    if (!firstMergeDoneRef.current || !currentUser || !spreadsheet?.id) return;
-    if (isLoadingFromSheetRef.current || isSavingToSheetRef.current) return;
-    pendingSaveLeadsRef.current = leads;
-    const timeout = setTimeout(async () => {
-      try {
-        if (isLoadingFromSheetRef.current || !spreadsheet?.id || !pendingSaveLeadsRef.current) return;
-        isSavingToSheetRef.current = true;
-        setIsGoogleSyncing(true);
-        const dadosParaSalvar = pendingSaveLeadsRef.current;
-        await executarComRetry(async () => {
-          const token = await getAccessToken();
-          if (!token) throw new Error('TOKEN_EXPIRADO');
-          await saveAllLeadsToSheet(spreadsheet.id, dadosParaSalvar, token);
-        });
-        salvarBaseSync(dadosParaSalvar);
-        pendingSaveLeadsRef.current = null;
-        const agora = new Date().toISOString();
-        setLastSyncTime(agora);
-        localStorage.setItem('ictx_last_sync_time', agora);
-      } catch (err) { console.warn('Auto-save:', err); }
-      finally { isSavingToSheetRef.current = false; setIsGoogleSyncing(false); }
-    }, 3000);
-    return () => clearTimeout(timeout);
-  }, [leads, currentUser, spreadsheet?.id]);
-
-  useEffect(() => { salvarTemplates(templates); }, [templates]);
+  // HANDLERS DE CONTATO E STATUS
+  // =========================================================================
+  const [leadParaMensagem, setLeadParaMensagem] = useState<Lead | null>(null);
+  const [leadParaLigacao, setLeadParaLigacao] = useState<Lead | null>(null);
+  const [leadParaDetalhes, setLeadParaDetalhes] = useState<Lead | null>(null);
+  const [leadParaCoach, setLeadParaCoach] = useState<Lead | null>(null);
 
   const handleBatchEnrich = async () => {
     let filaIds: string[] = [];
@@ -493,35 +600,47 @@ export default function App() {
     };
     window.addEventListener('ictx:registrarAcaoContato', handleCustomAcaoContato);
     return () => window.removeEventListener('ictx:registrarAcaoContato', handleCustomAcaoContato);
-  }, [currentUser, spreadsheet?.id]);
+  }, [currentUser]);
 
+  // =========================================================================
+  // HANDLERS GOOGLE (Agora só para Sheets - manual)
+  // =========================================================================
   const handleConnectGoogle = async () => {
     setIsGoogleSyncing(true);
-    isLoadingFromSheetRef.current = true;
     try {
       const authResult = await googleSignIn();
-      if (!authResult) throw new Error('Sem credenciais');
-      setCurrentUser(authResult.user);
-      const sheetInfo = await findOrCreateSpreadsheet(authResult.accessToken);
-      setSpreadsheet(sheetInfo);
-      const leadsDaPlanilha = await fetchLeadsFromSheet(sheetInfo.id, authResult.accessToken);
-      const base = carregarBaseSync();
-      let listaMerged: Lead[] = [];
-      setLeads((locaisAtuais) => {
-        const { merged } = mergeLeads3(locaisAtuais, leadsDaPlanilha, base);
-        listaMerged = merged;
-        return merged;
-      });
-      if (listaMerged.length > 0) {
-        await saveAllLeadsToSheet(sheetInfo.id, listaMerged, authResult.accessToken);
-        salvarBaseSync(listaMerged);
+      if (!authResult) {
+        // Redirect em andamento (mobile)
+        return;
       }
-      firstMergeDoneRef.current = true;
-      const agora = new Date().toISOString();
-      setLastSyncTime(agora);
-      localStorage.setItem('ictx_last_sync_time', agora);
-    } catch (err: any) { console.error('Erro Google:', err); throw err; }
-    finally { isLoadingFromSheetRef.current = false; setIsGoogleSyncing(false); }
+      setCurrentUser(authResult.user);
+      // Firestore listener já está ativo e vai carregar os dados sozinho
+    } catch (err: any) {
+      console.error('Erro Google:', err);
+      throw err;
+    } finally {
+      setIsGoogleSyncing(false);
+    }
+  };
+
+  const handleConnectSheets = async () => {
+    setIsGoogleSyncing(true);
+    try {
+      let token = await getAccessToken();
+      if (!token) {
+        const r = await googleSignIn();
+        if (!r) return;
+        token = r.accessToken;
+        setCurrentUser(r.user);
+      }
+      const sheetInfo = await findOrCreateSpreadsheet(token);
+      setSpreadsheet(sheetInfo);
+    } catch (err: any) {
+      console.error('Erro Google Sheets:', err);
+      throw err;
+    } finally {
+      setIsGoogleSyncing(false);
+    }
   };
 
   const handleSyncToSheet = async () => {
@@ -530,7 +649,13 @@ export default function App() {
       let token = await getAccessToken();
       if (!token) { const r = await googleSignIn(); if (!r) return; token = r.accessToken; setCurrentUser(r.user); }
       if (!spreadsheet) { const s = await findOrCreateSpreadsheet(token); setSpreadsheet(s); }
-      if (spreadsheet?.id) { await saveAllLeadsToSheet(spreadsheet.id, leads, token); salvarBaseSync(leads); }
+      if (spreadsheet?.id) {
+        await saveAllLeadsToSheet(spreadsheet.id, leads, token);
+        salvarBaseSync(leads);
+        const agora = new Date().toISOString();
+        setLastSyncTime(agora);
+        localStorage.setItem('ictx_last_sync_time', agora);
+      }
     } finally { setIsGoogleSyncing(false); }
   };
 
@@ -548,17 +673,26 @@ export default function App() {
         merged = res.merged;
         return res.merged;
       });
-      if (merged.length > 0) { await saveAllLeadsToSheet(spreadsheet.id, merged, token); salvarBaseSync(merged); }
+      if (merged.length > 0) {
+        await saveAllLeadsToSheet(spreadsheet.id, merged, token);
+        await salvarTodosLeadsNoFirestore(merged);
+        salvarBaseSync(merged);
+        const agora = new Date().toISOString();
+        setLastSyncTime(agora);
+        localStorage.setItem('ictx_last_sync_time', agora);
+      }
     } finally { setIsGoogleSyncing(false); }
   };
 
   const handleDisconnectGoogle = async () => {
     await logoutGoogle();
     setCurrentUser(null);
-    firstMergeDoneRef.current = false;
     setIsProfileOpen(false);
   };
 
+  // =========================================================================
+  // OUTROS HANDLERS
+  // =========================================================================
   const handleUpdateLead = (leadAtualizado: Lead) => {
     const corrigido = autocorrigeLead(leadAtualizado);
     setLeads((prev) => prev.map((l) => (l.id === corrigido.id ? corrigido : l)));
@@ -590,13 +724,19 @@ export default function App() {
   const handleSaveTemplates = (t: MessageTemplate[]) => setTemplates(t);
   const handleRestoreBackup = (bl: Lead[], bt: MessageTemplate[]) => {
     const saneados = bl.filter((l) => l && l.id && !isSampleLeadId(l.id)).map(autocorrigeLead);
-    if (saneados.length > 0) salvarLeads(saneados);
+    if (saneados.length > 0) {
+      salvarLeads(saneados);
+      salvarTodosLeadsNoFirestore(saneados).catch(console.error);
+    }
     if (bt?.length > 0) salvarTemplates(bt);
     setLeads(saneados); setTemplates(bt);
   };
 
   const existingCnpjs = new Set(leads.map((l) => l.cnpj));
 
+  // =========================================================================
+  // RENDER
+  // =========================================================================
   if (isAuthChecking) {
     return (
       <div className="min-h-[100dvh] bg-slate-900 flex items-center justify-center text-white">
@@ -664,7 +804,7 @@ export default function App() {
       {isTemplatesOpen && <TemplateManagerModal templates={templates} isOpen={true} onClose={() => setIsTemplatesOpen(false)} onSaveTemplates={handleSaveTemplates} />}
       {isExportOpen && <ExportImportModal isOpen={true} onClose={() => setIsExportOpen(false)} leads={leads} templates={templates} onRestoreBackup={handleRestoreBackup} />}
       {isInstallOpen && <InstallAppModal isOpen={true} onClose={() => setIsInstallOpen(false)} />}
-      {isGoogleModalOpen && <GoogleSheetsSyncModal isOpen={true} onClose={() => setIsGoogleModalOpen(false)} user={currentUser} spreadsheet={spreadsheet} isLoading={isGoogleSyncing} lastSyncTime={lastSyncTime} totalLeads={leads.length} onConnectGoogle={handleConnectGoogle} onSyncToSheet={handleSyncToSheet} onFetchFromSheet={handleFetchFromSheet} onDisconnect={handleDisconnectGoogle} />}
+      {isGoogleModalOpen && <GoogleSheetsSyncModal isOpen={true} onClose={() => setIsGoogleModalOpen(false)} user={currentUser} spreadsheet={spreadsheet} isLoading={isGoogleSyncing} lastSyncTime={lastSyncTime} totalLeads={leads.length} onConnectGoogle={handleConnectSheets} onSyncToSheet={handleSyncToSheet} onFetchFromSheet={handleFetchFromSheet} onDisconnect={handleDisconnectGoogle} />}
       <BatchMessageModal isOpen={isBatchModalOpen} onClose={() => {}} leadsFiltrados={leadsFiltrados} templates={templates} onUpdateStatus={handleUpdateLeadStatus} />
       {leadParaCoach && <CoachModal isOpen={true} onClose={() => setLeadParaCoach(null)} lead={leadParaCoach} onSaveCoachEvaluation={handleSaveCoachEvaluation} />}
       <SupervisorDashboard isOpen={isSupervisorOpen} onClose={() => setIsSupervisorOpen(false)} leadsEquipe={leadsEquipe} usuarioAtivo={usuarioAtivo} onAlternarRole={() => {}} />
