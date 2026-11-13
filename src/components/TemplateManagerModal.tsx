@@ -7,7 +7,6 @@ import {
   Edit2,
   Save,
   RotateCcw,
-  Sparkles,
   Info,
 } from 'lucide-react';
 import { MessageTemplate, TemplateEtapa } from '../types/crm';
@@ -75,7 +74,7 @@ export const TemplateManagerModal: React.FC<TemplateManagerModalProps> = ({
   const handleCriarNovo = () => {
     const novo: MessageTemplate = {
       id: `tpl_${Date.now()}`,
-      titulo: '✨ Novo Gatilho Comercial',
+      titulo: 'Novo Gatilho Comercial',
       etapa: 'contato_1',
       canal: 'whatsapp',
       destaque: 'Novo',
@@ -219,7 +218,7 @@ export const TemplateManagerModal: React.FC<TemplateManagerModalProps> = ({
                       setTemplateEmEdicao({ ...templateEmEdicao, titulo: e.target.value })
                     }
                     className="w-full text-xs p-2.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-red-600 bg-white font-medium"
-                    placeholder="Ex: 💰 Pronampe 0,5% a.m."
+                    placeholder="Ex: Pronampe 0,5% a.m."
                   />
                 </div>
 
