@@ -13,6 +13,11 @@ import { autocorrigeLead } from './cnpjService';
 
 const LEADS_COLLECTION = 'leads';
 
+// Função que remove qualquer campo com valor 'undefined', pois o Firestore não aceita
+function sanitizeForFirestore<T>(data: T): T {
+  return JSON.parse(JSON.stringify(data));
+}
+
 export function ouvirLeadsTempoReal(
   onUpdate: (leads: Lead[]) => void,
   onError?: (err: Error) => void
@@ -42,7 +47,8 @@ export function ouvirLeadsTempoReal(
 
 export async function salvarLeadNoFirestore(lead: Lead): Promise<void> {
   const ref = doc(db, LEADS_COLLECTION, lead.id);
-  await setDoc(ref, lead, { merge: true });
+  const leadLimpo = sanitizeForFirestore(lead);
+  await setDoc(ref, leadLimpo, { merge: true });
 }
 
 export async function deletarLeadNoFirestore(leadId: string): Promise<void> {
@@ -58,7 +64,8 @@ export async function salvarTodosLeadsNoFirestore(leads: Lead[]): Promise<void> 
     const chunk = leads.slice(i, i + BATCH_SIZE);
     for (const lead of chunk) {
       const ref = doc(db, LEADS_COLLECTION, lead.id);
-      batch.set(ref, lead, { merge: true });
+      const leadLimpo = sanitizeForFirestore(lead);
+      batch.set(ref, leadLimpo, { merge: true });
     }
     await batch.commit();
   }
@@ -104,5 +111,6 @@ export function ouvirTemplatesTempoReal(
 
 export async function salvarTemplatesNoFirestore(templates: MessageTemplate[]): Promise<void> {
   const ref = doc(db, 'config', 'templates');
-  await setDoc(ref, { lista: templates, atualizadoEm: new Date().toISOString() }, { merge: true });
+  const templatesLimpos = sanitizeForFirestore(templates);
+  await setDoc(ref, { lista: templatesLimpos, atualizadoEm: new Date().toISOString() }, { merge: true });
 }
