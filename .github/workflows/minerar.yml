@@ -13,28 +13,29 @@ jobs:
   minerar:
     runs-on: ubuntu-latest
     steps:
-      - name: 📥 Baixar o código
+      - name: Baixar o código
         uses: actions/checkout@v4
 
-      - name: 🟢 Configurar o Node.js
+      - name: Configurar o Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: 📦 Instalar bibliotecas
+      - name: Instalar bibliotecas
         run: npm install exceljs --legacy-peer-deps
 
-      - name: 🤖 Rodar o Minerador
+      - name: Rodar o Minerador
         env:
           CASADOSDADOS_API_KEY: ${{ secrets.CASADOSDADOS_API_KEY }}
         run: node bot/minerar.js
 
-      - name: 💾 Salvar o Cartucho no GitHub
+      - name: Salvar o Cartucho no GitHub
         run: |
           mkdir -p cartuchos
           touch cartuchos/.gitkeep
           git config --global user.name 'Robo iCtx'
           git config --global user.email 'robo@ictx.com'
           git add .
-          git commit -m "🤖 Novo cartucho gerado automaticamente [skip ci]" || echo "Nada para commitar"
+          git commit -m "Robo: Novo cartucho gerado automaticamente [skip ci]" || echo "Nada para commitar"
+          git pull --rebase origin main
           git push
