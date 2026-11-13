@@ -17,9 +17,7 @@ import {
 } from '../utils/ativacao';
 import { formatarNomeEmpresa, formatarNomePessoa } from '../utils/formatacao';
 
-// ============================================================================
-// COMPONENTE SANFONA (ACCORDION)
-// ============================================================================
+// --- COMPONENTE SANFONA (ACCORDION) ---
 const Section = ({ title, icon: Icon, children, defaultOpen = false, count }: any) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   return (
@@ -37,9 +35,7 @@ const Section = ({ title, icon: Icon, children, defaultOpen = false, count }: an
   );
 };
 
-// ============================================================================
-// TEMPLATES DO SNIPER (WHATSAPP)
-// ============================================================================
+// --- TEMPLATES DO SNIPER (WHATSAPP) ---
 const TEMPLATES_SNIPER = [
   { id: 'visao_geral', titulo: 'Visão Geral', tag: '1º Contato', icone: '💬', texto: `Oi {nome}, tudo joia? Vi aqui que você responde pela *{empresa}*, certo?\n\nSou o Douglas Krüger, represento o Banco Santander aqui na região em soluções e abertura de contas PJ. Tô te chamando rapidinho porque acompanho empresas com o perfil da {empresa} para avaliar a viabilidade de condições diferenciadas, como taxas competitivas e linhas de Pronampe. Vale a pena eu dar uma olhada rápida na viabilidade para a {empresa}?` },
   { id: 'recuperacao', titulo: 'Recuperação', tag: 'Recontato', icone: '🔄', texto: `Oi {nome}, tudo bem?\n\nTentei falar com você anteriormente sobre as condições do Santander para a *{empresa}*. Conseguiu dar uma olhada na proposta ou prefere que eu te ligue em 1 minutinho para alinharmos?` },
@@ -49,9 +45,7 @@ const TEMPLATES_SNIPER = [
   { id: 'objecao', titulo: 'Objeção', tag: 'Contorno', icone: '🛡️', texto: `Entendo perfeitamente {nome}, a maioria dos nossos parceiros já tinha relacionamento em outros bancos. Nossa intenção não é substituir seu banco principal agora, mas garantir que a *{empresa}* tenha uma segunda conta PJ sem custo fixo e com linhas de crédito abertas.` },
 ];
 
-// ============================================================================
-// ROTEIROS DE LIGAÇÃO (com Teleprompter)
-// ============================================================================
+// --- ROTEIROS DE LIGAÇÃO (com Teleprompter) ---
 const ROTEIROS_LIGACAO = [
   { id: 'abordagem_inicial', titulo: 'Abordagem Inicial', tag: '1º Contato', etapas: [{ fase: 'QUEBRA-GELO', fala: 'Olá {nome}, tudo bem? Aqui é Douglas Krüger do Santander Empresas. Vi que a {empresa} atua forte aqui na região de {cidade}.' }, { fase: 'GATILHO', fala: 'Estou te ligando rápido porque mapeamos o segmento da {empresa} e liberamos condições diferenciadas com isenção de tarifa na conta PJ e taxas especiais de Pronampe. Hoje você paga alguma taxa mensal de manutenção no seu banco atual?' }, { fase: 'FECHAMENTO', fala: 'Consigo garantir essa isenção completa. Posso te mandar o comparativo oficial direto no seu WhatsApp agora para você olhar sem compromisso?' }] },
   { id: 'quebra_objecao', titulo: 'Quebra de Objeção', tag: 'Contorno', etapas: [{ fase: 'SE JÁ TEM BANCO', fala: 'Perfeito {nome}, a maioria dos nossos parceiros já tinham relacionamento em outros bancos. Nossa intenção não é substituir seu banco principal agora, mas sim garantir que a {empresa} tenha uma segunda conta PJ blindada sem custo fixo e com linhas de crédito abertas.' }, { fase: 'SE NÃO TEM TEMPO', fala: 'Compreendo perfeitamente, tempo de empresário é ouro! Por isso o credenciamento é 100% digital pelo celular e leva menos de 5 minutos, sem pisar em agência.' }] },
@@ -59,9 +53,7 @@ const ROTEIROS_LIGACAO = [
   { id: 'ativacao_fechamento', titulo: 'Ativação & PIX', tag: 'Fechamento', etapas: [{ fase: 'PARABENIZAR', fala: 'Olá {nome}, tudo bem? Douglas aqui. Vi que a proposta da {empresa} foi concluída e a conta Santander Empresas já está habilitada.' }, { fase: 'PASSO DE ATIVAÇÃO', fala: 'Para validar o pacote com as isenções que combinamos, só precisamos fazer o primeiro login no aplicativo e registrar a sua chave PIX CNPJ.' }] },
 ];
 
-// ============================================================================
-// UTILITÁRIO: Quebrar em blocos anti-spam
-// ============================================================================
+// --- UTILITÁRIOS ---
 export function quebrarEmBlocos(texto: string): string[] {
   if (!texto) return [];
   const pedacos = texto.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p.length > 0);
@@ -69,9 +61,14 @@ export function quebrarEmBlocos(texto: string): string[] {
   return pedacos.length > 0 ? pedacos : [texto.trim()];
 }
 
-// ============================================================================
-// COMPONENTE PRINCIPAL
-// ============================================================================
+export function limparTextoHumano(bloco: string): string {
+  return bloco
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+    .trim();
+}
+
+// --- COMPONENTE PRINCIPAL ---
 export const LeadDetailDrawer: React.FC<any> = ({ lead, isOpen, onClose, onUpdateStatus, onUpdateLead, onSaveNotas, onRegistrarAcaoContato, onOpenMessageComposer, onOpenCallScript, onOpenCoach }) => {
   const [notas, setNotas] = useState(lead?.notas || '');
   const [editando, setEditando] = useState(false);
